@@ -12,35 +12,71 @@ function writeLine(stream, line) {
   stream.write(`${line}\n`);
 }
 
-function printUsage(stderr) {
-  writeLine(stderr, 'Usage: node src/cli.mjs sync|sync-api|sync-all');
+function formatSecondsTenths(tenths) {
+  if (tenths % 10 === 0) {
+    return String(tenths / 10);
+  }
+
+  return (tenths / 10).toFixed(1);
 }
 
-function printWikiSummary(stdout, result, heading = 'Sync completed.') {
+function formatDuration(durationMs) {
+  const totalTenths = Math.max(0, Math.round(durationMs / 100));
+
+  if (totalTenths < 600) {
+    return `${formatSecondsTenths(totalTenths)}秒`;
+  }
+
+  const hours = Math.floor(totalTenths / 36000);
+  const remainingTenths = totalTenths % 36000;
+  const minutes = Math.floor(remainingTenths / 600);
+  const secondsTenths = remainingTenths % 600;
+  const parts = [];
+
+  if (hours > 0) {
+    parts.push(`${hours}小时`);
+  }
+
+  if (minutes > 0) {
+    parts.push(`${minutes}分`);
+  }
+
+  if (secondsTenths > 0 || parts.length === 0) {
+    parts.push(`${formatSecondsTenths(secondsTenths)}秒`);
+  }
+
+  return parts.join(' ');
+}
+
+function printUsage(stderr) {
+  writeLine(stderr, '用法：node src/cli.mjs sync|sync-api|sync-all');
+}
+
+function printWikiSummary(stdout, result, heading = 'Wiki 同步完成。') {
   writeLine(
     stdout,
     [
       heading,
-      `Articles: ${result.totalArticles}`,
-      `Created: ${result.createdCount}`,
-      `Updated: ${result.updatedCount}`,
-      `Deleted: ${result.deletedCount}`,
-      `Images downloaded: ${result.imagesDownloaded}`,
-      `Duration: ${result.durationMs}ms`
+      `词条数：${result.totalArticles}`,
+      `新增：${result.createdCount}`,
+      `更新：${result.updatedCount}`,
+      `删除：${result.deletedCount}`,
+      `下载图片：${result.imagesDownloaded}`,
+      `耗时：${formatDuration(result.durationMs)}`
     ].join(' ')
   );
 }
 
-function printApiSummary(stdout, result, heading = 'API sync completed.') {
+function printApiSummary(stdout, result, heading = 'API 同步完成。') {
   writeLine(
     stdout,
     [
       heading,
-      `Entities: ${result.totalEntities}`,
-      `Created: ${result.createdCount}`,
-      `Updated: ${result.updatedCount}`,
-      `Deleted: ${result.deletedCount}`,
-      `Duration: ${result.durationMs}ms`
+      `实体数：${result.totalEntities}`,
+      `新增：${result.createdCount}`,
+      `更新：${result.updatedCount}`,
+      `删除：${result.deletedCount}`,
+      `耗时：${formatDuration(result.durationMs)}`
     ].join(' ')
   );
 }
@@ -99,7 +135,7 @@ export async function runCli({
       onProgress: wikiReporter.update
     });
     wikiReporter.end();
-    printWikiSummary(stdout, wikiResult, 'Wiki sync completed.');
+    printWikiSummary(stdout, wikiResult, 'Wiki 同步完成。');
 
     const apiReporter = createProgressReporterImpl({
       stdout,
@@ -111,10 +147,10 @@ export async function runCli({
     });
     apiReporter.end();
     printApiSummary(stdout, apiResult);
-    writeLine(stdout, `Sync-all completed. Total duration: ${Date.now() - startedAt}ms`);
+    writeLine(stdout, `全部同步完成。 总耗时：${formatDuration(Date.now() - startedAt)}`);
     return 0;
   } catch (error) {
-    writeLine(stderr, `Sync failed: ${error.message}`);
+    writeLine(stderr, `同步失败：${error.message}`);
     return 1;
   }
 }

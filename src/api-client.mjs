@@ -17,7 +17,7 @@ export function createApiClient({
       try {
         const response = await fetchImpl(url);
         if (!response.ok) {
-          throw new Error(`Request failed with status ${response.status} for ${url}`);
+          throw new Error(`请求失败，状态码 ${response.status}：${url}`);
         }
 
         return await response.json();

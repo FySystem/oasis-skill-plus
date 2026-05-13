@@ -4,15 +4,15 @@ export const STAGE_ORDER = ['category', 'articles', 'images', 'finalize'];
 export const API_STAGE_ORDER = ['catalogs', 'details', 'finalize'];
 
 export const STAGE_LABELS = {
-  category: 'Loading category tree',
-  articles: 'Fetching articles',
-  images: 'Processing images',
-  finalize: 'Writing local files'
+  category: '正在加载分类树',
+  articles: '正在抓取词条',
+  images: '正在处理图片',
+  finalize: '正在写入本地文件'
 };
 export const API_STAGE_LABELS = {
-  catalogs: 'Loading API catalogs',
-  details: 'Fetching API details',
-  finalize: 'Writing local files'
+  catalogs: '正在加载 API 目录',
+  details: '正在抓取 API 详情',
+  finalize: '正在写入本地文件'
 };
 
 export function getStageIndex(phase, stageOrder = STAGE_ORDER) {
@@ -68,7 +68,7 @@ export function createTerminalProgressReporter({
     const line = formatProgressLine({
       stageIndex,
       stageCount,
-      label: label ?? stageLabels[phase] ?? 'Working',
+      label: label ?? stageLabels[phase] ?? '处理中',
       current,
       total
     });

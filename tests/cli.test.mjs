@@ -45,7 +45,9 @@ test('runCli routes sync-api to the API synchronizer', async () => {
 
   assert.equal(exitCode, 0);
   assert.deepEqual(calls, ['api']);
-  assert.match(stdout.read(), /API sync completed\./);
+  assert.match(stdout.read(), /API 同步完成。/);
+  assert.match(stdout.read(), /实体数：4/);
+  assert.match(stdout.read(), /新增：4/);
   assert.equal(stderr.read(), '');
 });
 
@@ -82,9 +84,10 @@ test('runCli routes sync-all to both synchronizers in order', async () => {
 
   assert.equal(exitCode, 0);
   assert.deepEqual(calls, ['wiki', 'api']);
-  assert.match(stdout.read(), /Wiki sync completed\./);
-  assert.match(stdout.read(), /API sync completed\./);
-  assert.match(stdout.read(), /Sync-all completed\./);
+  assert.match(stdout.read(), /Wiki 同步完成。/);
+  assert.match(stdout.read(), /API 同步完成。/);
+  assert.match(stdout.read(), /全部同步完成。/);
+  assert.match(stdout.read(), /总耗时：/);
 });
 
 test('runCli prints usage for an unsupported command', async () => {
@@ -99,5 +102,24 @@ test('runCli prints usage for an unsupported command', async () => {
   });
 
   assert.equal(exitCode, 1);
-  assert.match(stderr.read(), /Usage: node src\/cli\.mjs sync\|sync-api\|sync-all/);
+  assert.match(stderr.read(), /用法：node src\/cli\.mjs sync\|sync-api\|sync-all/);
+});
+
+test('runCli prints a localized error when syncing fails', async () => {
+  const stdout = createWritableCapture();
+  const stderr = createWritableCapture();
+
+  const exitCode = await runCli({
+    argv: ['node', 'cli', 'sync-api'],
+    stdout: stdout.stream,
+    stderr: stderr.stream,
+    syncWikiImpl: async () => ({}),
+    syncApiImpl: async () => {
+      throw new Error('请求失败，状态码 500：https://example.com/api');
+    }
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(stdout.read(), '');
+  assert.match(stderr.read(), /同步失败：请求失败，状态码 500：https:\/\/example\.com\/api/);
 });

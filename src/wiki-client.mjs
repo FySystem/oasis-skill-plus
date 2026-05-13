@@ -17,12 +17,12 @@ export function createWikiClient({
       try {
         const response = await fetchImpl(url);
         if (!response.ok) {
-          throw new Error(`Request failed with status ${response.status} for ${url}`);
+          throw new Error(`请求失败，状态码 ${response.status}：${url}`);
         }
 
         const payload = await response.json();
         if (payload.code !== 0) {
-          throw new Error(payload.message || `Unexpected API response for ${url}`);
+          throw new Error(payload.message || `接口返回异常：${url}`);
         }
 
         return payload;
@@ -44,7 +44,7 @@ export function createWikiClient({
     const entry = payload.data?.[0];
 
     if (!entry?.Body) {
-      throw new Error('Category payload is missing the tree body');
+      throw new Error('分类接口返回缺少树结构内容');
     }
 
     return {
@@ -59,7 +59,7 @@ export function createWikiClient({
     const entry = payload.data?.[0];
 
     if (!entry) {
-      throw new Error(`Article ${id} returned no data`);
+      throw new Error(`词条 ${id} 未返回数据`);
     }
 
     return {
@@ -78,7 +78,7 @@ export function createWikiClient({
       try {
         const response = await fetchImpl(url);
         if (!response.ok) {
-          throw new Error(`Image request failed with status ${response.status} for ${url}`);
+          throw new Error(`图片请求失败，状态码 ${response.status}：${url}`);
         }
 
         const arrayBuffer = await response.arrayBuffer();
