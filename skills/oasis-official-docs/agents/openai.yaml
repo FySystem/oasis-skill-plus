@@ -1,0 +1,4 @@
+interface:
+  display_name: "绿洲启源官方文档"
+  short_description: "查询本地绿洲API与Wiki"
+  default_prompt: "使用 $oasis-official-docs 先核实绿洲启源 API 是否存在，或先搜索官方 Wiki，再回答问题或编写代码。"

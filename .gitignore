@@ -1,0 +1,7 @@
+node_modules/
+.oasis-sync/
+docs/api/
+docs/wiki/
+*.log
+
+.trae/

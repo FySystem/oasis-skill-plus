@@ -1,0 +1,12 @@
+{
+  "name": "oasis-skill-plus",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync": "node src/cli.mjs sync",
+    "sync:api": "node src/cli.mjs sync-api",
+    "sync:all": "node src/cli.mjs sync-all",
+    "test": "node --test"
+  }
+}
