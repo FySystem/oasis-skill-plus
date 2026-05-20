@@ -1,7 +1,7 @@
 # oasis-official-docs Skill 安装与使用
 
 `oasis-official-docs` 是给其他项目使用的查询型 skill，不是给本仓库自身交互用的业务功能。
-它依赖目标项目根目录下存在一个 `oasis-skill-plus` 子模块，并从该子模块里的本地 Markdown 文档查询绿洲启源官方 API 与 Wiki。
+它依赖目标项目根目录下存在一个 `oasis-skill-plus` 子模块，并从该子模块里的本地 Markdown 文档查询绿洲启元官方 API 与 Wiki。
 
 ## 目录约定
 
@@ -74,7 +74,7 @@ node src/cli.mjs sync-all
 
 适合：
 
-- 先确认某个绿洲启源 API 是否真实存在
+- 先确认某个绿洲启元 API 是否真实存在
 - 先查官方 Wiki 再总结解决方法
 - 在写 API 代码前先核对类名、结构体、函数名和相关文档
 

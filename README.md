@@ -151,7 +151,7 @@ node src/cli.mjs sync-all
 
 ## 在其他项目中接入 `oasis-official-docs`
 
-如果你希望在另一个项目里查询本地绿洲启源官方文档，推荐把本仓库放在目标项目根目录下，目录名保持为 `oasis-skill-plus`。
+如果你希望在另一个项目里查询本地绿洲启元官方文档，推荐把本仓库放在目标项目根目录下，目录名保持为 `oasis-skill-plus`。
 
 推荐目录结构：
 
@@ -241,7 +241,7 @@ node skills/oasis-official-docs/scripts/query-oasis-docs.mjs --project-root . --
 
 适合以下场景：
 
-- 让 AI 在写绿洲启源相关代码前先核实 API 是否存在
+- 让 AI 在写绿洲启元相关代码前先核实 API 是否存在
 - 让 AI 在回答编辑器、玩法、生命周期等问题前先查官方 Wiki
 - 在团队项目里提供统一、可复现的本地官方资料源
 

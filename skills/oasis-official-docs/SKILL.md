@@ -1,9 +1,9 @@
 ---
 name: oasis-official-docs
-description: 当其他项目以 `oasis-skill-plus` 作为子模块或固定目录接入，并且需要查询本地绿洲启源官方 API 或 Wiki 文档、在回答问题或编写代码前先核实 API 是否真实存在、通过官方 Wiki 排查编辑器或玩法问题，或在用户明确要求最新资料时刷新本地文档时使用。
+description: 当其他项目以 `oasis-skill-plus` 作为子模块或固定目录接入，并且需要查询本地绿洲启元官方 API 或 Wiki 文档、在回答问题或编写代码前先核实 API 是否真实存在、通过官方 Wiki 排查编辑器或玩法问题，或在用户明确要求最新资料时刷新本地文档时使用。
 ---
 
-# 绿洲启源官方文档查询
+# 绿洲启元官方文档查询
 
 ## 概述
 
@@ -30,7 +30,7 @@ node skills/oasis-official-docs/scripts/query-oasis-docs.mjs \
 
 ### API 查询与代码生成
 
-- 在回答 API 是否存在、API 用法、参数、返回值，或编写绿洲启源 API 相关代码之前，先执行 `verify-api`。
+- 在回答 API 是否存在、API 用法、参数、返回值，或编写绿洲启元 API 相关代码之前，先执行 `verify-api`。
 - 查询具体符号时，优先使用 `--scope api --mode verify-api`，例如 `AActor`、`UGCPlayerControllerSystem`、`FVector`。
 - 如果 `verify-api` 没有找到精确结果，再使用 `search` 在 `api` 或 `all` 范围内补查，之后再决定是否能下结论。
 - 如果本地官方文档依然不能支持某个说法，要直接说明“本地官方文档未确认”，不要编造 API 或行为。
@@ -47,7 +47,7 @@ node skills/oasis-official-docs/scripts/query-oasis-docs.mjs \
 
 ### Wiki 检索与问题排查
 
-- 当用户询问绿洲启源编辑器问题、玩法逻辑问题或常见故障排查时，先搜索 `wiki`。
+- 当用户询问绿洲启元编辑器问题、玩法逻辑问题或常见故障排查时，先搜索 `wiki`。
 - 特性名、报错场景、生命周期概念、排查关键词，优先用 `--scope wiki --mode search`。
 - 如果问题可能同时涉及 Wiki 说明和 API 定义，再扩展到 `--scope all`。
 
