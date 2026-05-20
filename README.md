@@ -1,6 +1,6 @@
 # oasis-skill-plus
 
-`oasis-skill-plus` 是一个面向绿洲启源官方文档的本地化工具仓库，提供两类能力：
+`oasis-skill-plus` 是一个面向绿洲启元官方文档的本地化工具仓库，提供两类能力：
 
 1. 把 Oasis 官方 Wiki 与 API 文档同步到本地，生成可检索、可版本管理的 Markdown。
 2. 提供 `oasis-official-docs` 查询型 skill，供其他项目在回答问题、核对 API、编写代码前先查本地官方文档。
