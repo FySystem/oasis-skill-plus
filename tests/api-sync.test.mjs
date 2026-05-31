@@ -169,6 +169,7 @@ test('syncApi writes API docs, indexes, and manifest from fixtures', async () =>
     );
     const familyIndex = path.join(rootDir, 'docs', 'api', 'cppenum', '000_索引.md');
     const rootIndex = path.join(rootDir, 'docs', 'api', '000_索引.md');
+    const symbolIndex = path.join(rootDir, 'docs', 'api', 'symbol-index.tsv');
     const manifestPath = path.join(rootDir, '.oasis-sync', 'api-manifest.json');
 
     assert.equal(result.totalEntities, 4);
@@ -179,12 +180,25 @@ test('syncApi writes API docs, indexes, and manifest from fixtures', async () =>
     const classDocText = await readFile(classDoc, 'utf8');
     const familyIndexText = await readFile(familyIndex, 'utf8');
     const rootIndexText = await readFile(rootIndex, 'utf8');
+    const symbolIndexText = await readFile(symbolIndex, 'utf8');
     const manifest = await loadApiManifest(manifestPath);
 
     assert.match(classDocText, /\[FVector\]\(\.\.\/\.\.\/\.\.\/cppstruct\/F\/FV\/FVector\.md\)/);
     assert.match(classDocText, /\[AI_Phase\]\(\.\.\/\.\.\/\.\.\/cppenum\/A\/AI\/AI_Phase\.md\)/);
     assert.match(familyIndexText, /\[AI_Phase\]\(\.\/A\/AI\/AI_Phase\.md\)/);
     assert.match(rootIndexText, /\[class 索引\]\(\.\/class\/000_索引\.md\)/);
+    assert.equal(
+      symbolIndexText.split('\n')[0],
+      'kind\tname\tsymbol_path\tsource_json_path\tsource_json_url\tmarkdown_file\tdescription'
+    );
+    assert.match(
+      symbolIndexText,
+      /class\tUGCPlayerControllerSystem\t和平全局接口 \/ 角色系统 \/ UGCPlayerControllerSystem\tclass\/detail\/和平全局接口\/角色系统\/UGCPlayerControllerSystem\.json\thttps:\/\/developer\.gp\.qq\.com\/api\/class\/detail\/和平全局接口\/角色系统\/UGCPlayerControllerSystem\.json\tdocs\/api\/class\/和平全局接口\/角色系统\/UGCPlayerControllerSystem\.md\t玩家控制器系统/
+    );
+    assert.match(
+      symbolIndexText,
+      /cppenum\tAI_Phase\tA \/ AI \/ AI_Phase\tcppenum\/detail\/AI_Phase\.json\thttps:\/\/developer\.gp\.qq\.com\/api\/cppenum\/detail\/AI_Phase\.json\tdocs\/api\/cppenum\/A\/AI\/AI_Phase\.md\t阶段枚举/
+    );
     assert.equal(manifest.entities.length, 4);
   } finally {
     await rm(rootDir, { recursive: true, force: true });

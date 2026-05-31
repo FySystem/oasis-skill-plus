@@ -19,10 +19,24 @@ import {
 } from './progress.mjs';
 import { createApiClient } from './api-client.mjs';
 import { renderApiMarkdown } from './api-markdown.mjs';
+import {
+  buildApiSymbolIndexRows,
+  renderTsv
+} from './tsv-index.mjs';
 
 const API_OUTPUT_ROOT = 'docs/api';
 const API_MANIFEST_PATH = '.oasis-sync/api-manifest.json';
 const API_FAMILIES = ['class', 'cppenum', 'cppstruct', 'globalfunc'];
+const API_SYMBOL_INDEX_PATH = 'docs/api/symbol-index.tsv';
+const API_SYMBOL_INDEX_HEADERS = [
+  'kind',
+  'name',
+  'symbol_path',
+  'source_json_path',
+  'source_json_url',
+  'markdown_file',
+  'description'
+];
 
 function toPosixPath(...segments) {
   return path.posix.join(...segments);
@@ -427,6 +441,7 @@ export async function syncApi({
 
     return {
       ...record,
+      description: detail?.Description ?? '',
       body,
       contentHash: hashContent(body)
     };
@@ -439,7 +454,7 @@ export async function syncApi({
       API_FAMILIES.map((family) => [family, familySummaries[family] ?? { count: 0 }])
     ),
     entities: renderedEntities
-      .map(({ body, ...entity }) => entity)
+      .map(({ body, description, ...entity }) => entity)
       .sort((left, right) => left.outputPath.localeCompare(right.outputPath, 'en'))
   };
 
@@ -452,7 +467,7 @@ export async function syncApi({
     .map((entity) => entity.outputPath)
     .filter((outputPath) => !nextOutputPaths.has(outputPath));
   const familyIndexFiles = API_FAMILIES.map((family) => toPosixPath(API_OUTPUT_ROOT, family, '000_索引.md'));
-  const finalizeTotal = renderedEntities.length + familyIndexFiles.length + staleOutputPaths.length + 2;
+  const finalizeTotal = renderedEntities.length + familyIndexFiles.length + staleOutputPaths.length + 3;
   let finalizeProgress = 0;
 
   emitProgress(onProgress, {
@@ -502,6 +517,10 @@ export async function syncApi({
     toAbsolutePath(rootDir, toPosixPath(API_OUTPUT_ROOT, '000_索引.md')),
     rootIndexContent
   );
+  tickFinalize();
+
+  const symbolIndexContent = renderTsv(API_SYMBOL_INDEX_HEADERS, buildApiSymbolIndexRows(renderedEntities));
+  await writeTextFileIfChanged(toAbsolutePath(rootDir, API_SYMBOL_INDEX_PATH), symbolIndexContent);
   tickFinalize();
 
   for (const stalePath of staleOutputPaths) {

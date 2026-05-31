@@ -98,6 +98,7 @@ test('syncWiki writes docs, index, images, and manifest from fixtures', async ()
     const result = await syncWiki({ rootDir, client });
     const docFile = path.join(rootDir, 'docs', 'wiki', '新手入门', '299_编辑器资源库.md');
     const indexFile = path.join(rootDir, 'docs', 'wiki', '000_索引.md');
+    const articleIndexFile = path.join(rootDir, 'docs', 'wiki', 'article-index.tsv');
     const manifestFile = path.join(rootDir, '.oasis-sync', 'manifest.json');
 
     assert.equal(result.totalArticles, 2);
@@ -108,11 +109,21 @@ test('syncWiki writes docs, index, images, and manifest from fixtures', async ()
 
     const docText = await readFile(docFile, 'utf8');
     const indexText = await readFile(indexFile, 'utf8');
+    const articleIndexText = await readFile(articleIndexFile, 'utf8');
     const manifest = await loadManifest(manifestFile);
 
     assert.match(docText, /\[属性绑定\]\(\.\.\/进阶内容\/20108_属性绑定\.md\)/);
     assert.match(docText, /!\[图片\]\(\.\.\/_assets\/images\/[a-f0-9]{8}_resource\.png\)/);
     assert.match(indexText, /\[编辑器资源库\]\(\.\/新手入门\/299_编辑器资源库\.md\)/);
+    assert.equal(articleIndexText.split('\n')[0], 'id\ttitle\twiki_path\turl\tfile');
+    assert.match(
+      articleIndexText,
+      /299\t编辑器资源库\t新手入门\thttps:\/\/developer\.gp\.qq\.com\/wikieditor\/#\/catalog\/299\tdocs\/wiki\/新手入门\/299_编辑器资源库\.md/
+    );
+    assert.match(
+      articleIndexText,
+      /20108\t属性绑定\t进阶内容\thttps:\/\/developer\.gp\.qq\.com\/wikieditor\/#\/catalog\/20108\tdocs\/wiki\/进阶内容\/20108_属性绑定\.md/
+    );
     assert.equal(manifest.articles.length, 2);
     assert.equal(Object.keys(manifest.images).length, 1);
   } finally {

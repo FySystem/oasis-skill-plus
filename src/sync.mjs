@@ -25,12 +25,18 @@ import {
   saveManifest
 } from './manifest.mjs';
 import { STAGE_LABELS } from './progress.mjs';
+import {
+  buildWikiArticleIndexRows,
+  renderTsv
+} from './tsv-index.mjs';
 import { createWikiClient } from './wiki-client.mjs';
 
 const OUTPUT_ROOT = 'docs/wiki';
 const IMAGES_ROOT = 'docs/wiki/_assets/images';
 const INDEX_PATH = 'docs/wiki/000_索引.md';
+const ARTICLE_INDEX_PATH = 'docs/wiki/article-index.tsv';
 const MANIFEST_PATH = '.oasis-sync/manifest.json';
+const ARTICLE_INDEX_HEADERS = ['id', 'title', 'wiki_path', 'url', 'file'];
 
 function toPosixPath(...segments) {
   return path.posix.join(...segments);
@@ -359,7 +365,7 @@ export async function syncWiki({
   );
   const uniqueStaleImagePaths = Array.from(new Set(staleImagePaths));
   const finalizeTotal =
-    nextArticles.length + imageDownloads.size + staleArticlePaths.length + uniqueStaleImagePaths.length + 2;
+    nextArticles.length + imageDownloads.size + staleArticlePaths.length + uniqueStaleImagePaths.length + 3;
   let finalizeProgress = 0;
 
   emitProgress(onProgress, {
@@ -403,6 +409,10 @@ export async function syncWiki({
 
   const indexContent = buildIndexMarkdown(tree, titleById, articlePathById);
   await writeTextFileIfChanged(toAbsolutePath(rootDir, INDEX_PATH), `${indexContent.trimEnd()}\n`);
+  tickFinalize();
+
+  const articleIndexContent = renderTsv(ARTICLE_INDEX_HEADERS, buildWikiArticleIndexRows(nextArticles));
+  await writeTextFileIfChanged(toAbsolutePath(rootDir, ARTICLE_INDEX_PATH), articleIndexContent);
   tickFinalize();
 
   for (const stalePath of staleArticlePaths) {
