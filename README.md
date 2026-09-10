@@ -49,6 +49,8 @@ oasis-skill-plus/
 ## 环境要求
 
 - Node.js 18+
+- 本地文档检索需要 `ripgrep`（`rg`），并确保它在 `PATH` 中
+- 可选 Go 文件处理功能需要先安装 Go 1.22+ 进行构建
 
 说明：
 
@@ -88,6 +90,18 @@ node src/cli.mjs sync-all
 - `双击运行同步API.cmd`
 - `双击运行同步Wiki+API.cmd`
 
+### 3. 启用 Go 文件处理（可选）
+
+安装 Go 1.22+ 后执行一次：
+
+```bash
+npm run build:native
+```
+
+构建结果位于 `bin/oasis-file-writer.exe`（Windows）或 `bin/oasis-file-writer`（其他平台）。之后 `sync-api` 与 `sync-all` 自动使用 Go 批量处理 API 文档文件。
+
+未构建时使用 JS 实现；已构建的程序运行失败时会报告错误。二进制不纳入 Git，换机器或修改 Go 源码后需重新构建。运行已构建的程序不需要安装 Go。
+
 ## 同步命令说明
 
 ### `sync`
@@ -119,7 +133,13 @@ node src/cli.mjs sync-all
 
 ### `sync-all`
 
-按顺序先同步 Wiki，再同步 API，并输出总耗时。
+并发同步 Wiki 和 API，并输出各自耗时与总耗时。双击 `双击运行同步Wiki+API.cmd` 同样使用此模式；某一任务失败时，会等待另一任务结束后返回失败退出码。
+
+在同一终端窗口中，左侧显示 Wiki、右侧显示 API，实时显示进度并保留已完成的阶段。输出重定向到文件时，结束后记录完整分栏进度。
+
+同步时会并发获取文档和图片。实际耗时取决于网络、远端服务、本地磁盘和已有文件情况。
+
+图片先下载到临时目录，全部下载成功后再移入正式目录。图片下载失败时会清理临时文件，并保留旧文档与同步清单。
 
 ## 输出结果说明
 
@@ -150,6 +170,8 @@ node src/cli.mjs sync-all
 - 已下载的图片映射
 
 这让仓库能够在后续同步时正确处理新增、更新、重命名和删除。
+
+同步摘要中的新增、更新、删除按 Wiki 词条或 API 实体统计，不包含索引文件。远端未变化但本地缺失的文档补回后计入新增；图片下载数量单独显示。
 
 ## 在其他项目中接入 `oasis-official-docs`
 
@@ -282,6 +304,13 @@ node oasis-skill-plus/skills/oasis-official-docs/scripts/query-oasis-docs.mjs --
 
 ```bash
 npm test
+```
+
+修改 Go 文件处理程序后，重新构建并运行原生测试：
+
+```bash
+npm run build:native
+npm run test:native
 ```
 
 测试覆盖的重点包括：

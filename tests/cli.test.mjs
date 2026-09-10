@@ -51,7 +51,7 @@ test('runCli routes sync-api to the API synchronizer', async () => {
   assert.equal(stderr.read(), '');
 });
 
-test('runCli routes sync-all to both synchronizers in order', async () => {
+test('runCli routes sync-all to both synchronizers', async () => {
   const stdout = createWritableCapture();
   const calls = [];
 
@@ -88,6 +88,53 @@ test('runCli routes sync-all to both synchronizers in order', async () => {
   assert.match(stdout.read(), /API 同步完成。/);
   assert.match(stdout.read(), /全部同步完成。/);
   assert.match(stdout.read(), /总耗时：/);
+});
+
+test('联合同步并发启动，失败时等待另一任务并结束固定进度区域', async () => {
+  // 使用显式屏障验证并发，不依赖机器速度或计时阈值。
+  const stdout = createWritableCapture(true);
+  const stderr = createWritableCapture();
+  let releaseApi;
+  const apiGate = new Promise((resolve) => { releaseApi = resolve; });
+  let apiStarted;
+  const started = new Promise((resolve) => { apiStarted = resolve; });
+  let returned = false;
+  const running = runCli({
+    argv: ['node', 'cli', 'sync-all'], stdout: stdout.stream, stderr: stderr.stream,
+    syncWikiImpl: async ({ onProgress }) => {
+      onProgress({ phase: 'articles', current: 1, total: 2 });
+      await started;
+      throw new Error('Wiki 失败');
+    },
+    syncApiImpl: async ({ onProgress }) => {
+      apiStarted();
+      onProgress({ phase: 'details', current: 1, total: 2 });
+      await apiGate;
+      return { totalEntities: 2, durationMs: 1 };
+    }
+  }).then((code) => { returned = true; return code; });
+  await started;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(returned, false);
+  releaseApi();
+  assert.equal(await running, 1);
+  assert.match(stdout.read(), /Wiki +\| API/);
+  assert.match(stdout.read(), /\[2\/4\].*\| \[2\/3\]/);
+  assert.match(stdout.read(), /API 同步完成/);
+  assert.doesNotMatch(stdout.read(), /全部同步完成/);
+  assert.match(stderr.read(), /Wiki 失败/);
+});
+
+test('联合同步捕获两个同步抛出的错误', async () => {
+  // 注入实现同步抛错时，另一任务也必须得到执行。
+  const stderr = createWritableCapture();
+  const code = await runCli({
+    argv: ['node', 'cli', 'sync-all'], stdout: createWritableCapture().stream, stderr: stderr.stream,
+    syncWikiImpl() { throw new Error('Wiki 错误'); },
+    syncApiImpl() { throw new Error('API 错误'); }
+  });
+  assert.equal(code, 1);
+  assert.match(stderr.read(), /Wiki 错误；API 错误/);
 });
 
 test('runCli prints usage for an unsupported command', async () => {

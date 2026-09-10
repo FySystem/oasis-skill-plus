@@ -4,9 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:native": "node scripts/build-native.mjs",
     "sync": "node src/cli.mjs sync",
     "sync:api": "node src/cli.mjs sync-api",
     "sync:all": "node src/cli.mjs sync-all",
-    "test": "node --test"
+    "test": "node --test",
+    "test:native": "go -C native/file-writer test ./..."
   }
 }

@@ -425,6 +425,40 @@ test('createRgJsonRunner 将 spawn ENOENT 映射为 RG_NOT_FOUND', async () => {
   ]);
 });
 
+test('检索并发启动，逆序完成仍保持优先级、去重和 limit，失败等待其他检索结束', async () => {
+  const fixture = await createFixtureRepo({
+    'docs/api/symbol-index.tsv': 'header\n',
+    'docs/wiki/article-index.tsv': 'header\n'
+  });
+  try {
+    const pending = [];
+    const options = { projectRoot: fixture.projectRoot, mode: 'search', scope: 'all', query: 'Actor', limit: 2,
+      runRgJson: () => new Promise((resolve, reject) => pending.push({ resolve, reject })) };
+    const query = runDocsQuery(options);
+    // 未释放任何任务就必须已启动四项，避免用不稳定的毫秒阈值测试并发。
+    assert.equal(pending.length, 4);
+    pending[3].resolve([rgMatch('docs/wiki/Actor.md', 1, 'wiki')]);
+    pending[2].resolve([]);
+    const content = rgMatch('docs/api/Actor.md', 1, 'api');
+    pending[1].resolve([content, content]);
+    pending[0].resolve([rgMatch('docs/api/symbol-index.tsv', 2, 'class\tActor\tActor\tx\turl\tdocs/api/Actor.md\tindex')]);
+    assert.deepEqual((await query).matches.map((match) => match.excerpt), ['index', 'api']);
+
+    pending.length = 0;
+    let finished = false;
+    const failure = new Error('检索失败');
+    const failedQuery = runDocsQuery(options).finally(() => { finished = true; });
+    const rejection = assert.rejects(failedQuery, (error) => error === failure);
+    pending[0].reject(failure);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(finished, false);
+    for (const task of pending.slice(1)) task.resolve([]);
+    await rejection;
+  } finally {
+    await rm(fixture.projectRoot, { recursive: true, force: true });
+  }
+});
+
 test('formatTextResult 输出包含 file 和 excerpt', () => {
   const text = formatTextResult({
     ok: true,

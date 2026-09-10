@@ -41,6 +41,7 @@ node oasis-skill-plus/skills/oasis-official-docs/scripts/query-oasis-docs.mjs \
 - 如果 `rg` 命令不存在，或脚本返回 `RG_NOT_FOUND`，表示 `ripgrep` 不在 `PATH`，要先安装 `ripgrep` 或修复 `PATH`；不能凭记忆猜 API。
 - 如果脚本返回 `INDEX_MISSING`，这是 warning，不是致命错误。非 exact 搜索会继续直接搜索 Markdown；exact 搜索会跳过 Markdown fallback。
 - `--format` 控制输出为 `json` 或 `text`；`--limit` 控制命中数量；`--exact` 用于精确查询；`--family` 用于在 API 范围内按 `class`、`cppenum`、`cppstruct`、`globalfunc` 过滤。
+- 脚本自动并发检索各范围的索引与正文，仍按 API 索引、API 正文、Wiki 索引、Wiki 正文的顺序合并。核实 API 名称时使用 `--mode verify-api --scope api`，索引存在时只查索引；已知 family 时可缩小正文检索范围。
 
 ## 必须遵守的流程
 

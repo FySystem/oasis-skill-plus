@@ -2,8 +2,10 @@ import path from 'node:path';
 import {
   access,
   mkdir,
+  mkdtemp,
   readFile,
   readdir,
+  rename,
   rm,
   stat,
   writeFile
@@ -30,6 +32,7 @@ import {
   renderTsv
 } from './tsv-index.mjs';
 import { createWikiClient } from './wiki-client.mjs';
+import { countRestoredDocuments } from './sync-stats.mjs';
 
 const OUTPUT_ROOT = 'docs/wiki';
 const IMAGES_ROOT = 'docs/wiki/_assets/images';
@@ -56,19 +59,29 @@ async function fileExists(filePath) {
 }
 
 async function mapLimit(items, limit, mapper) {
+  // 并发必须为正整数，失败后停止领新任务并等待在途任务收尾。
+  if (!Number.isInteger(limit) || limit < 1) throw new RangeError('并发数必须为正整数');
   const results = new Array(items.length);
   let nextIndex = 0;
+  let failed = false;
 
   async function worker() {
-    while (nextIndex < items.length) {
+    while (!failed && nextIndex < items.length) {
       const currentIndex = nextIndex;
       nextIndex += 1;
-      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+      try {
+        results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
     }
   }
 
   const workerCount = Math.min(limit, items.length);
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  const workers = await Promise.allSettled(Array.from({ length: workerCount }, () => worker()));
+  const rejected = workers.find((result) => result.status === 'rejected');
+  if (rejected) throw rejected.reason;
   return results;
 }
 
@@ -113,19 +126,6 @@ async function writeTextFileIfChanged(filePath, content) {
 
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, content, 'utf8');
-  return true;
-}
-
-async function writeBinaryFileIfChanged(filePath, buffer) {
-  if (await fileExists(filePath)) {
-    const currentBuffer = await readFile(filePath);
-    if (currentBuffer.equals(buffer)) {
-      return false;
-    }
-  }
-
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, buffer);
   return true;
 }
 
@@ -192,8 +192,9 @@ function buildIndexMarkdown(tree, titleById, articlePathById) {
 export async function syncWiki({
   rootDir = process.cwd(),
   client = createWikiClient(),
-  articleConcurrency = 8,
-  imageConcurrency = 6,
+  // 文章和图片分别限流，图片并发下载与暂存，不再积攒全部图片缓冲区。
+  articleConcurrency = 16,
+  imageConcurrency = 24,
   clock = () => new Date().toISOString(),
   onProgress
 } = {}) {
@@ -298,144 +299,162 @@ export async function syncWiki({
     });
   }
 
-  await mapLimit(imageUrls, imageConcurrency, async (url) => {
-    const imageOutputPath = imagePathByUrl.get(url);
-    const previousOutputPath = previousImages[url];
-    const imageExistsLocally =
-      previousOutputPath === imageOutputPath &&
-      (await fileExists(toAbsolutePath(rootDir, imageOutputPath)));
+  // 临时图片与正式目录位于同一工作区，下载全部成功后可直接重命名落盘。
+  await mkdir(path.dirname(manifestFile), { recursive: true });
+  const stagingDirectory = await mkdtemp(path.join(path.dirname(manifestFile), 'images-'));
+  try {
+    await mapLimit(imageUrls, imageConcurrency, async (url) => {
+      const imageOutputPath = imagePathByUrl.get(url);
+      const previousOutputPath = previousImages[url];
+      const imageExistsLocally =
+        previousOutputPath === imageOutputPath &&
+        (await fileExists(toAbsolutePath(rootDir, imageOutputPath)));
 
-    if (!imageExistsLocally) {
-      const download = await client.downloadImage(url);
-      imageDownloads.set(url, download.buffer);
-    }
+      if (!imageExistsLocally) {
+        const download = await client.downloadImage(url);
+        const stagedPath = path.join(stagingDirectory, path.basename(imageOutputPath));
+        await writeFile(stagedPath, download.buffer);
+        imageDownloads.set(url, stagedPath);
+      }
 
-    imageProgress += 1;
-    emitProgress(onProgress, {
-      phase: 'images',
-      label: STAGE_LABELS.images,
-      current: imageProgress,
-      total: imageUrls.length,
-      done: imageProgress === imageUrls.length
+      imageProgress += 1;
+      emitProgress(onProgress, {
+        phase: 'images',
+        label: STAGE_LABELS.images,
+        current: imageProgress,
+        total: imageUrls.length,
+        done: imageProgress === imageUrls.length
+      });
     });
-  });
 
-  const nextArticles = preparedArticles.map((article) => {
-    const localizedBody = rewriteImageLinks(article.linkedBody, article.outputPath, imagePathByUrl);
-    const finalBody = localizedBody.endsWith('\n') ? localizedBody : `${localizedBody}\n`;
+    const nextArticles = preparedArticles.map((article) => {
+      const localizedBody = rewriteImageLinks(article.linkedBody, article.outputPath, imagePathByUrl);
+      const finalBody = localizedBody.endsWith('\n') ? localizedBody : `${localizedBody}\n`;
 
-    return {
-      id: String(article.id),
-      title: article.title,
-      treePath: article.treePath,
-      outputPath: article.outputPath,
-      updateTime: article.updateTime,
-      contentHash: hashContent(finalBody),
-      imageUrls: article.imageUrls,
-      body: finalBody
+      return {
+        id: String(article.id),
+        title: article.title,
+        treePath: article.treePath,
+        outputPath: article.outputPath,
+        updateTime: article.updateTime,
+        contentHash: hashContent(finalBody),
+        imageUrls: article.imageUrls,
+        body: finalBody
+      };
+    });
+
+    const nextManifest = {
+      schemaVersion: createEmptyManifest().schemaVersion,
+      lastSyncedAt: clock(),
+      remoteTree: {
+        version,
+        updateTime
+      },
+      articles: nextArticles
+        .map(({ body, ...articleRecord }) => articleRecord)
+        .sort((left, right) => left.outputPath.localeCompare(right.outputPath, 'zh-CN')),
+      images: Object.fromEntries(
+        Array.from(imagePathByUrl.entries()).sort((left, right) => left[0].localeCompare(right[0], 'en'))
+      )
     };
-  });
 
-  const nextManifest = {
-    schemaVersion: createEmptyManifest().schemaVersion,
-    lastSyncedAt: clock(),
-    remoteTree: {
-      version,
-      updateTime
-    },
-    articles: nextArticles
-      .map(({ body, ...articleRecord }) => articleRecord)
-      .sort((left, right) => left.outputPath.localeCompare(right.outputPath, 'zh-CN')),
-    images: Object.fromEntries(
-      Array.from(imagePathByUrl.entries()).sort((left, right) => left[0].localeCompare(right[0], 'en'))
-    )
-  };
+    const diff = diffManifest(previousManifest, nextManifest);
+    const previousArticlesById = new Map(
+      (previousManifest.articles ?? []).map((article) => [String(article.id), article])
+    );
+    const nextOutputPaths = new Set(nextManifest.articles.map((article) => article.outputPath));
+    const nextImagePaths = new Set(Object.values(nextManifest.images));
+    const staleArticlePaths = (previousManifest.articles ?? [])
+      .map((article) => article.outputPath)
+      .filter((outputPath) => !nextOutputPaths.has(outputPath));
+    const staleImagePaths = Object.values(previousManifest.images ?? {}).filter(
+      (imagePath) => !nextImagePaths.has(imagePath)
+    );
+    const uniqueStaleImagePaths = Array.from(new Set(staleImagePaths));
+    const finalizeTotal =
+      nextArticles.length + imageDownloads.size + staleArticlePaths.length + uniqueStaleImagePaths.length + 3;
+    let finalizeProgress = 0;
 
-  const diff = diffManifest(previousManifest, nextManifest);
-  const previousArticlesById = new Map(
-    (previousManifest.articles ?? []).map((article) => [String(article.id), article])
-  );
-  const nextOutputPaths = new Set(nextManifest.articles.map((article) => article.outputPath));
-  const nextImagePaths = new Set(Object.values(nextManifest.images));
-  const staleArticlePaths = (previousManifest.articles ?? [])
-    .map((article) => article.outputPath)
-    .filter((outputPath) => !nextOutputPaths.has(outputPath));
-  const staleImagePaths = Object.values(previousManifest.images ?? {}).filter(
-    (imagePath) => !nextImagePaths.has(imagePath)
-  );
-  const uniqueStaleImagePaths = Array.from(new Set(staleImagePaths));
-  const finalizeTotal =
-    nextArticles.length + imageDownloads.size + staleArticlePaths.length + uniqueStaleImagePaths.length + 3;
-  let finalizeProgress = 0;
-
-  emitProgress(onProgress, {
-    phase: 'finalize',
-    label: STAGE_LABELS.finalize,
-    current: 0,
-    total: finalizeTotal
-  });
-
-  function tickFinalize() {
-    finalizeProgress += 1;
     emitProgress(onProgress, {
       phase: 'finalize',
       label: STAGE_LABELS.finalize,
-      current: finalizeProgress,
-      total: finalizeTotal,
-      done: finalizeProgress === finalizeTotal
+      current: 0,
+      total: finalizeTotal
     });
-  }
 
-  for (const article of nextArticles) {
-    const previousRecord = previousArticlesById.get(article.id);
-    const shouldWrite =
-      !previousRecord ||
-      diff.updated.some((changedArticle) => changedArticle.id === article.id) ||
-      !(await fileExists(toAbsolutePath(rootDir, article.outputPath)));
-
-    if (!shouldWrite) {
-      tickFinalize();
-      continue;
+    function tickFinalize() {
+      finalizeProgress += 1;
+      emitProgress(onProgress, {
+        phase: 'finalize',
+        label: STAGE_LABELS.finalize,
+        current: finalizeProgress,
+        total: finalizeTotal,
+        done: finalizeProgress === finalizeTotal
+      });
     }
 
-    await writeTextFileIfChanged(toAbsolutePath(rootDir, article.outputPath), article.body);
+    // 补回本地缺失文档计入新增，远端已变化的文档仍按原差异分类，避免重复计数。
+    const changedPaths = new Set([...diff.created, ...diff.updated].map((article) => article.outputPath));
+    const restoredCount = await countRestoredDocuments(rootDir,
+      nextArticles.filter((article) => !changedPaths.has(article.outputPath)));
+    // 更新标识只建立一次，避免批量更新时反复扫描整个差异列表。
+    const updatedArticleIds = new Set(diff.updated.map((article) => article.id));
+    for (const article of nextArticles) {
+      const previousRecord = previousArticlesById.get(article.id);
+      const shouldWrite =
+        !previousRecord ||
+        updatedArticleIds.has(article.id) ||
+        !(await fileExists(toAbsolutePath(rootDir, article.outputPath)));
+
+      if (!shouldWrite) {
+        tickFinalize();
+        continue;
+      }
+
+      await writeTextFileIfChanged(toAbsolutePath(rootDir, article.outputPath), article.body);
+      tickFinalize();
+    }
+
+    // 图片内容已经在下载阶段写入磁盘，此处只移动文件，不再重复写入数 GB 数据。
+    if (imageDownloads.size > 0) await mkdir(toAbsolutePath(rootDir, IMAGES_ROOT), { recursive: true });
+    for (const [url, stagedPath] of imageDownloads.entries()) {
+      await rename(stagedPath, toAbsolutePath(rootDir, imagePathByUrl.get(url)));
+      tickFinalize();
+    }
+
+    const indexContent = buildIndexMarkdown(tree, titleById, articlePathById);
+    await writeTextFileIfChanged(toAbsolutePath(rootDir, INDEX_PATH), `${indexContent.trimEnd()}\n`);
     tickFinalize();
-  }
 
-  for (const [url, buffer] of imageDownloads.entries()) {
-    await writeBinaryFileIfChanged(toAbsolutePath(rootDir, imagePathByUrl.get(url)), buffer);
+    const articleIndexContent = renderTsv(ARTICLE_INDEX_HEADERS, buildWikiArticleIndexRows(nextArticles));
+    await writeTextFileIfChanged(toAbsolutePath(rootDir, ARTICLE_INDEX_PATH), articleIndexContent);
     tickFinalize();
-  }
 
-  const indexContent = buildIndexMarkdown(tree, titleById, articlePathById);
-  await writeTextFileIfChanged(toAbsolutePath(rootDir, INDEX_PATH), `${indexContent.trimEnd()}\n`);
-  tickFinalize();
+    for (const stalePath of staleArticlePaths) {
+      await safeRemove(rootDir, stalePath);
+      await pruneEmptyDirectories(path.dirname(toAbsolutePath(rootDir, stalePath)), toAbsolutePath(rootDir, OUTPUT_ROOT));
+      tickFinalize();
+    }
 
-  const articleIndexContent = renderTsv(ARTICLE_INDEX_HEADERS, buildWikiArticleIndexRows(nextArticles));
-  await writeTextFileIfChanged(toAbsolutePath(rootDir, ARTICLE_INDEX_PATH), articleIndexContent);
-  tickFinalize();
+    for (const stalePath of uniqueStaleImagePaths) {
+      await safeRemove(rootDir, stalePath);
+      await pruneEmptyDirectories(path.dirname(toAbsolutePath(rootDir, stalePath)), toAbsolutePath(rootDir, OUTPUT_ROOT));
+      tickFinalize();
+    }
 
-  for (const stalePath of staleArticlePaths) {
-    await safeRemove(rootDir, stalePath);
-    await pruneEmptyDirectories(path.dirname(toAbsolutePath(rootDir, stalePath)), toAbsolutePath(rootDir, OUTPUT_ROOT));
+    await saveManifest(manifestFile, nextManifest);
     tickFinalize();
+
+    return {
+      totalArticles: nextArticles.length,
+      createdCount: diff.created.length + restoredCount,
+      updatedCount: diff.updated.length,
+      deletedCount: diff.deleted.length,
+      imagesDownloaded: imageDownloads.size,
+      durationMs: Date.now() - startedAt
+    };
+  } finally {
+    // 只清理本次 mkdtemp 创建的目录；mapLimit 已确保没有在途写入。
+    await rm(stagingDirectory, { recursive: true, force: true });
   }
-
-  for (const stalePath of uniqueStaleImagePaths) {
-    await safeRemove(rootDir, stalePath);
-    await pruneEmptyDirectories(path.dirname(toAbsolutePath(rootDir, stalePath)), toAbsolutePath(rootDir, OUTPUT_ROOT));
-    tickFinalize();
-  }
-
-  await saveManifest(manifestFile, nextManifest);
-  tickFinalize();
-
-  return {
-    totalArticles: nextArticles.length,
-    createdCount: diff.created.length,
-    updatedCount: diff.updated.length,
-    deletedCount: diff.deleted.length,
-    imagesDownloaded: imageDownloads.size,
-    durationMs: Date.now() - startedAt
-  };
 }

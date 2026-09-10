@@ -1,6 +1,7 @@
 import {
   API_STAGE_LABELS,
   API_STAGE_ORDER,
+  createCombinedProgressReporter,
   createTerminalProgressReporter,
   STAGE_LABELS,
   STAGE_ORDER
@@ -53,31 +54,33 @@ function printUsage(stderr) {
 }
 
 function printWikiSummary(stdout, result, heading = 'Wiki 同步完成。') {
+  // 标题与统计分行，图片统计单列，避免联合结果成为两条超长行。
+  writeLine(stdout, heading);
   writeLine(
     stdout,
     [
-      heading,
-      `词条数：${result.totalArticles}`,
+      `  词条数：${String(result.totalArticles).padEnd(4)}`,
       `新增：${result.createdCount}`,
       `更新：${result.updatedCount}`,
       `删除：${result.deletedCount}`,
-      `下载图片：${result.imagesDownloaded}`,
       `耗时：${formatDuration(result.durationMs)}`
-    ].join(' ')
+    ].join('  ')
   );
+  writeLine(stdout, `  下载图片：${result.imagesDownloaded}`);
 }
 
 function printApiSummary(stdout, result, heading = 'API 同步完成。') {
+  // 与 Wiki 使用相同统计列，便于纵向对照。
+  writeLine(stdout, heading);
   writeLine(
     stdout,
     [
-      heading,
-      `实体数：${result.totalEntities}`,
+      `  实体数：${String(result.totalEntities).padEnd(4)}`,
       `新增：${result.createdCount}`,
       `更新：${result.updatedCount}`,
       `删除：${result.deletedCount}`,
       `耗时：${formatDuration(result.durationMs)}`
-    ].join(' ')
+    ].join('  ')
   );
 }
 
@@ -126,27 +129,25 @@ export async function runCli({
     }
 
     const startedAt = Date.now();
-    const wikiReporter = createProgressReporterImpl({
-      stdout,
-      stageOrder: STAGE_ORDER,
-      stageLabels: STAGE_LABELS
-    });
-    const wikiResult = await syncWikiImpl({
-      onProgress: wikiReporter.update
-    });
-    wikiReporter.end();
-    printWikiSummary(stdout, wikiResult, 'Wiki 同步完成。');
-
-    const apiReporter = createProgressReporterImpl({
-      stdout,
-      stageOrder: API_STAGE_ORDER,
-      stageLabels: API_STAGE_LABELS
-    });
-    const apiResult = await syncApiImpl({
-      onProgress: apiReporter.update
-    });
-    apiReporter.end();
-    printApiSummary(stdout, apiResult);
+    // Wiki 与 API 左右分栏，分别保留各阶段进度。
+    const reporter = createCombinedProgressReporter({ stdout });
+    // 输出目录与 manifest 独立；失败时也等待另一任务结束，再返回退出码。
+    const results = await Promise.allSettled([
+      Promise.resolve().then(() => syncWikiImpl({
+        onProgress: (event) => reporter.update('wiki', event)
+      })),
+      Promise.resolve().then(() => syncApiImpl({
+        onProgress: (event) => reporter.update('api', event)
+      }))
+    ]);
+    reporter.end();
+    writeLine(stdout, '');
+    if (results[0].status === 'fulfilled') printWikiSummary(stdout, results[0].value);
+    if (results[1].status === 'fulfilled') printApiSummary(stdout, results[1].value);
+    const failures = results.filter((result) => result.status === 'rejected');
+    if (failures.length > 0) {
+      throw new Error(failures.map((result) => result.reason?.message ?? String(result.reason)).join('；'));
+    }
     writeLine(stdout, `全部同步完成。 总耗时：${formatDuration(Date.now() - startedAt)}`);
     return 0;
   } catch (error) {

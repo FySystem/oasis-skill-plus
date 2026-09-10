@@ -128,11 +128,19 @@ export async function runDocsQuery(options = {}) {
   const warnings = [];
   const matches = [];
 
-  for (const task of buildSearchTasks(oasisRepoRoot, normalized, warnings)) {
-    const events = await runRgJson({
-      cwd: oasisRepoRoot,
-      args: task.args
-    });
+  const tasks = buildSearchTasks(oasisRepoRoot, normalized, warnings);
+  // 最多四项独立检索并发执行；等待全部结束，再按原任务顺序合并，避免完成顺序改变结果优先级。
+  const results = await Promise.allSettled(tasks.map(async (task) => runRgJson({
+    cwd: oasisRepoRoot,
+    args: task.args
+  })));
+
+  for (const [index, task] of tasks.entries()) {
+    const result = results[index];
+    if (result.status === 'rejected') {
+      throw result.reason;
+    }
+    const events = result.value;
 
     for (const event of events) {
       const match = task.mapper(event, oasisRepoRoot, normalized);

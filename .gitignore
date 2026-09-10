@@ -1,4 +1,10 @@
 node_modules/
+bin/
+# 本机性能测试报告不作为通用项目文档提交
+docs/sync-performance.md
+docs/sync-cold-performance.md
+docs/native-performance.md
+docs/query-performance.md
 .oasis-sync/
 docs/api/
 docs/wiki/

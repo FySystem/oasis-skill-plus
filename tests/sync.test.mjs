@@ -2,10 +2,81 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { existsSync, readdirSync } from 'node:fs';
 
 import { loadManifest } from '../src/manifest.mjs';
 import { syncWiki } from '../src/sync.mjs';
+
+test('图片最多 24 路并发暂存，成功后发布，重复同步复用本地图片', async () => {
+  // 使用短异步屏障测量真实在途数量，检查暂存与正式文件不会混用。
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'oasis-images-limit-'));
+  const urls = Array.from({ length: 50 }, (_, i) => `https://example.com/${i}.png`);
+  let active = 0;
+  let peak = 0;
+  let downloads = 0;
+  const client = createClientFixture({
+    tree: [{ id: 1, label: '图片', type: 1 }],
+    articles: { 1: { title: '图片', body: [...urls, urls[0]].map((url) => `![图](${url})`).join('\n') } },
+    images: {}
+  });
+  client.downloadImage = async (url) => {
+    active += 1;
+    peak = Math.max(peak, active);
+    downloads += 1;
+    await new Promise((resolve) => setImmediate(resolve));
+    active -= 1;
+    return { buffer: Buffer.from(url) };
+  };
+  try {
+    const result = await syncWiki({ rootDir, client, onProgress(event) {
+      if (event.phase === 'images' && event.done) {
+        const staging = readdirSync(path.join(rootDir, '.oasis-sync')).find((name) => name.startsWith('images-'));
+        assert.equal(readdirSync(path.join(rootDir, '.oasis-sync', staging)).length, 50);
+        assert.equal(existsSync(path.join(rootDir, 'docs/wiki')), false);
+      }
+    } });
+    assert.equal(peak, 24);
+    assert.equal(result.imagesDownloaded, 50);
+    const manifest = await loadManifest(path.join(rootDir, '.oasis-sync/manifest.json'));
+    for (const [url, file] of Object.entries(manifest.images)) assert.equal(await readFile(path.join(rootDir, file), 'utf8'), url);
+    assert.deepEqual(await readdir(path.join(rootDir, '.oasis-sync')), ['manifest.json']);
+    assert.equal((await syncWiki({ rootDir, client, imageConcurrency: 3 })).imagesDownloaded, 0);
+    assert.equal(downloads, 50);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('图片失败等待在途暂存收尾，清理临时文件且保留旧文档与 manifest', async () => {
+  // 一个请求先失败，另一个稍后返回；返回错误时不能还有后台写入。
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'oasis-images-fail-'));
+  const client = createClientFixture({ tree: [{ id: 1, type: 1 }], articles: { 1: { title: '旧文档', body: '旧内容' } }, images: {} });
+  try {
+    await syncWiki({ rootDir, client });
+    const manifestPath = path.join(rootDir, '.oasis-sync/manifest.json');
+    const before = await readFile(manifestPath, 'utf8');
+    client.fetchArticle = async () => ({ id: '1', title: '新文档', body: '![a](https://example.com/a.png)\n![b](https://example.com/b.png)\n![c](https://example.com/c.png)' });
+    let finished = false;
+    let requests = 0;
+    client.downloadImage = async (url) => {
+      requests += 1;
+      if (url.endsWith('a.png')) throw new Error('图片下载失败');
+      await new Promise((resolve) => setImmediate(resolve));
+      finished = true;
+      return { buffer: Buffer.from('图片') };
+    };
+    await assert.rejects(syncWiki({ rootDir, client, imageConcurrency: 2 }), /图片下载失败/);
+    assert.equal(finished, true);
+    assert.equal(requests, 2);
+    assert.equal(await readFile(manifestPath, 'utf8'), before);
+    assert.deepEqual(await readdir(path.join(rootDir, '.oasis-sync')), ['manifest.json']);
+    assert.equal(await readFile(path.join(rootDir, 'docs/wiki/1_旧文档.md'), 'utf8'), '旧内容\n');
+    assert.equal(existsSync(path.join(rootDir, 'docs/wiki/1_新文档.md')), false);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
 
 function createClientFixture({ tree, articles, images, failImageUrl }) {
   return {

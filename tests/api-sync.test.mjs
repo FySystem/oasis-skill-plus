@@ -39,6 +39,64 @@ function createApiClientFixture({
   };
 }
 
+test('API 四类目录并发获取，全部完成后再生成详情与索引', async () => {
+  // 用屏障确保目录请求相互重叠，并故意让完成顺序不同于家族顺序。
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'oasis-api-concurrent-'));
+  const pending = new Map();
+  const events = [];
+  const catalog = (family) => new Promise((resolve) => {
+    pending.set(family, resolve);
+    if (pending.size === 4) {
+      for (const name of ['globalfunc', 'cppstruct', 'cppenum', 'class']) {
+        pending.get(name)(name === 'class' ? [] : {});
+      }
+    }
+  });
+  try {
+    const result = await syncApi({ rootDir, client: {
+      fetchClassCatalog: () => catalog('class'),
+      fetchSortedCatalog: catalog,
+      fetchDetail() { assert.fail('空目录不应请求详情'); }
+    }, onProgress: (event) => events.push(event) });
+    assert.equal(result.totalEntities, 0);
+    assert.deepEqual(events.filter((event) => event.phase === 'catalogs').map((event) => event.current), [0, 1, 2, 3, 4]);
+    assert.equal(events.filter((event) => event.phase === 'catalogs').at(-1).done, true);
+    assert.equal(pending.size, 4);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('API 详情默认最多 24 路，并允许调用方调低并发', async () => {
+  // 人工保持一次事件循环的在途请求，直接测量并发峰值而不是比较耗时。
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'oasis-api-limit-'));
+  try {
+    for (const limit of [undefined, 3]) {
+      let active = 0;
+      let peak = 0;
+      await syncApi({ rootDir, detailConcurrency: limit, client: {
+        async fetchClassCatalog() { return []; },
+        async fetchSortedCatalog(family) {
+          return family === 'cppenum'
+            ? Object.fromEntries(Array.from({ length: 30 }, (_, index) => [`E${index}`, `cppenum/detail/E${index}.json`]))
+            : {};
+        },
+        async fetchDetail() {
+          active += 1;
+          peak = Math.max(peak, active);
+          await new Promise((resolve) => setImmediate(resolve));
+          active -= 1;
+          return { Name: 'Enum', Variables: [] };
+        }
+      } });
+      assert.equal(peak, limit ?? 24);
+      assert.equal(active, 0);
+    }
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 test('normalizeApiSourcePath converts detail/class paths and preserves existing family detail paths', () => {
   assert.equal(
     normalizeApiSourcePath('class', 'detail/class/和平全局接口/角色系统/UGCPlayerControllerSystem.json'),

@@ -18,6 +18,8 @@ import {
   API_STAGE_LABELS
 } from './progress.mjs';
 import { createApiClient } from './api-client.mjs';
+import { countRestoredDocuments } from './sync-stats.mjs';
+import { hasNativeFiles, writeNativeFiles } from './native-files.mjs';
 import { renderApiMarkdown } from './api-markdown.mjs';
 import {
   buildApiSymbolIndexRows,
@@ -342,7 +344,9 @@ async function pruneEmptyDirectories(directoryPath, stopAt) {
 export async function syncApi({
   rootDir = process.cwd(),
   client = createApiClient(),
-  detailConcurrency = 12,
+  // 详情以网络等待为主，保持有界并发以提高吞吐，调用方仍可按网络条件调低。
+  detailConcurrency = 24,
+  nativeFiles = hasNativeFiles(),
   clock = () => new Date().toISOString(),
   onProgress
 } = {}) {
@@ -362,22 +366,12 @@ export async function syncApi({
     total: catalogTotal
   });
 
-  const classCatalog = await client.fetchClassCatalog();
-  const flattenedClass = flattenClassCatalog(classCatalog);
-  familyIndexNodes.class = flattenedClass.indexNodes;
-  familySummaries.class = { count: flattenedClass.records.length };
-  catalogProgress += 1;
-  emitProgress(onProgress, {
-    phase: 'catalogs',
-    label: API_STAGE_LABELS.catalogs,
-    current: catalogProgress,
-    total: catalogTotal
-  });
-
-  const flattenedFamilies = { class: flattenedClass };
-  for (const family of API_FAMILIES.filter((item) => item !== 'class')) {
-    const sortedCatalog = await client.fetchSortedCatalog(family);
-    const flattened = flattenSortedCatalog(family, sortedCatalog);
+  // 四类目录互不依赖，同时获取；详情仍等待完整目录，以保证交叉链接正确。
+  const flattenedFamilies = {};
+  await Promise.all(API_FAMILIES.map(async (family) => {
+    const flattened = family === 'class'
+      ? flattenClassCatalog(await client.fetchClassCatalog())
+      : flattenSortedCatalog(family, await client.fetchSortedCatalog(family));
     flattenedFamilies[family] = flattened;
     familyIndexNodes[family] = flattened.indexNodes;
     familySummaries[family] = { count: flattened.records.length };
@@ -389,7 +383,7 @@ export async function syncApi({
       total: catalogTotal,
       done: catalogProgress === catalogTotal
     });
-  }
+  }));
 
   const allRecords = API_FAMILIES.flatMap((family) => flattenedFamilies[family].records);
   const outputPathBySourcePath = new Map(allRecords.map((record) => [record.sourcePath, record.outputPath]));
@@ -459,6 +453,10 @@ export async function syncApi({
   };
 
   const diff = diffApiManifest(previousManifest, nextManifest);
+  // 补回本地文件也属于新增；排除已在远端新增/更新列表中的实体，避免重复统计。
+  const changedPaths = new Set([...diff.created, ...diff.updated].map((entity) => entity.outputPath));
+  const restoredCount = await countRestoredDocuments(rootDir,
+    renderedEntities.filter((entity) => !changedPaths.has(entity.outputPath)));
   const previousEntitiesBySourcePath = new Map(
     (previousManifest.entities ?? []).map((entity) => [entity.sourcePath, entity])
   );
@@ -488,17 +486,34 @@ export async function syncApi({
     });
   }
 
-  for (const entity of renderedEntities) {
-    const previousEntity = previousEntitiesBySourcePath.get(entity.sourcePath);
-    const shouldWrite =
-      !previousEntity ||
-      diff.updated.some((record) => record.sourcePath === entity.sourcePath) ||
-      !(await fileExists(toAbsolutePath(rootDir, entity.outputPath)));
+  // 仅把文件 I/O 交给 Go，文档渲染、清理旧路径和 manifest 顺序仍由 JS 管理。
+  if (nativeFiles) {
+    await mkdir(rootDir, { recursive: true });
+    await writeNativeFiles({
+      directory: path.resolve(rootDir),
+      items: renderedEntities.map((entity) => ({
+        filename: entity.outputPath,
+        content: entity.body,
+        checkOnly: previousEntitiesBySourcePath.has(entity.sourcePath)
+          && apiRecordsEquivalent(previousEntitiesBySourcePath.get(entity.sourcePath), entity)
+      })),
+      onWritten: tickFinalize
+    });
+  } else {
+    for (const entity of renderedEntities) {
+      const previousEntity = previousEntitiesBySourcePath.get(entity.sourcePath);
+      // 直接比较旧记录，避免每个实体都遍历一次更新列表。
+      const shouldWrite =
+        !previousEntity ||
+        !apiRecordsEquivalent(previousEntity, entity) ||
+        !(await fileExists(toAbsolutePath(rootDir, entity.outputPath)));
 
-    if (shouldWrite) {
-      await writeTextFileIfChanged(toAbsolutePath(rootDir, entity.outputPath), entity.body);
+      if (shouldWrite) {
+        await writeTextFileIfChanged(toAbsolutePath(rootDir, entity.outputPath), entity.body);
+      }
+      tickFinalize();
     }
-    tickFinalize();
+
   }
 
   for (const family of API_FAMILIES) {
@@ -534,7 +549,7 @@ export async function syncApi({
 
   return {
     totalEntities: renderedEntities.length,
-    createdCount: diff.created.length,
+    createdCount: diff.created.length + restoredCount,
     updatedCount: diff.updated.length,
     deletedCount: diff.deleted.length,
     durationMs: Date.now() - startedAt
