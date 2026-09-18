@@ -6,6 +6,7 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 
 import {
   buildApiOutputPath,
+  getDefaultApiDetailConcurrency,
   normalizeApiSourcePath,
   loadApiManifest,
   syncApi
@@ -67,7 +68,7 @@ test('API 四类目录并发获取，全部完成后再生成详情与索引', a
   }
 });
 
-test('API 详情默认最多 24 路，并允许调用方调低并发', async () => {
+test('API 详情按机器资源自适应，并尊重调用方指定的并发上限', async () => {
   // 人工保持一次事件循环的在途请求，直接测量并发峰值而不是比较耗时。
   const rootDir = await mkdtemp(path.join(os.tmpdir(), 'oasis-api-limit-'));
   try {
@@ -78,7 +79,7 @@ test('API 详情默认最多 24 路，并允许调用方调低并发', async () 
         async fetchClassCatalog() { return []; },
         async fetchSortedCatalog(family) {
           return family === 'cppenum'
-            ? Object.fromEntries(Array.from({ length: 30 }, (_, index) => [`E${index}`, `cppenum/detail/E${index}.json`]))
+            ? Object.fromEntries(Array.from({ length: 120 }, (_, index) => [`E${index}`, `cppenum/detail/E${index}.json`]))
             : {};
         },
         async fetchDetail() {
@@ -89,11 +90,26 @@ test('API 详情默认最多 24 路，并允许调用方调低并发', async () 
           return { Name: 'Enum', Variables: [] };
         }
       } });
-      assert.equal(peak, limit ?? 24);
+      assert.equal(peak, limit ?? getDefaultApiDetailConcurrency());
       assert.equal(active, 0);
     }
   } finally {
     await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('getDefaultApiDetailConcurrency scales with CPU and memory within safe bounds', () => {
+  const GiB = 1024 ** 3;
+  const cases = [
+    [{ parallelism: 1, totalMemoryBytes: GiB }, 16],
+    [{ parallelism: 4, totalMemoryBytes: 8 * GiB }, 16],
+    [{ parallelism: 8, totalMemoryBytes: 16 * GiB }, 32],
+    [{ parallelism: 16, totalMemoryBytes: 16 * GiB }, 64],
+    [{ parallelism: 32, totalMemoryBytes: 64 * GiB }, 96]
+  ];
+
+  for (const [hardware, expected] of cases) {
+    assert.equal(getDefaultApiDetailConcurrency(hardware), expected);
   }
 });
 

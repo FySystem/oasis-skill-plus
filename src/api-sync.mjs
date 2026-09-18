@@ -1,4 +1,5 @@
 import path from 'node:path';
+import os from 'node:os';
 import {
   access,
   mkdir,
@@ -39,6 +40,38 @@ const API_SYMBOL_INDEX_HEADERS = [
   'markdown_file',
   'description'
 ];
+const MIN_DETAIL_CONCURRENCY = 16;
+const MAX_DETAIL_CONCURRENCY = 96;
+const MEMORY_PER_DETAIL_BATCH = 256 * 1024 * 1024;
+
+function detectParallelism() {
+  return typeof os.availableParallelism === 'function'
+    ? os.availableParallelism()
+    : os.cpus().length;
+}
+
+/**
+ * Pick a bounded default without making callers guess a machine-specific value.
+ * The memory ratio reserves roughly 256 MiB per eight in-flight responses;
+ * explicit detailConcurrency still wins when a caller knows its network limit.
+ */
+export function getDefaultApiDetailConcurrency({
+  parallelism = detectParallelism(),
+  totalMemoryBytes = os.totalmem()
+} = {}) {
+  const cpuCount = Number.isFinite(parallelism) && parallelism > 0
+    ? Math.floor(parallelism)
+    : 1;
+  const memoryBytes = Number.isFinite(totalMemoryBytes) && totalMemoryBytes > 0
+    ? totalMemoryBytes
+    : MEMORY_PER_DETAIL_BATCH;
+  const cpuLimit = cpuCount * 4;
+  const memoryLimit = Math.floor(memoryBytes / MEMORY_PER_DETAIL_BATCH) * 8;
+  return Math.min(
+    MAX_DETAIL_CONCURRENCY,
+    Math.max(MIN_DETAIL_CONCURRENCY, Math.min(cpuLimit, memoryLimit))
+  );
+}
 
 function toPosixPath(...segments) {
   return path.posix.join(...segments);
@@ -344,13 +377,14 @@ async function pruneEmptyDirectories(directoryPath, stopAt) {
 export async function syncApi({
   rootDir = process.cwd(),
   client = createApiClient(),
-  // 详情以网络等待为主，保持有界并发以提高吞吐，调用方仍可按网络条件调低。
-  detailConcurrency = 24,
+  // 按机器资源给默认上限；调用方仍可按网络条件手动覆盖。
+  detailConcurrency,
   nativeFiles = hasNativeFiles(),
   clock = () => new Date().toISOString(),
   onProgress
 } = {}) {
   const startedAt = Date.now();
+  const resolvedDetailConcurrency = detailConcurrency ?? getDefaultApiDetailConcurrency();
   const manifestPath = toAbsolutePath(rootDir, API_MANIFEST_PATH);
   const previousManifest = await loadApiManifest(manifestPath);
 
@@ -414,7 +448,7 @@ export async function syncApi({
     });
   }
 
-  const renderedEntities = await mapLimit(allRecords, detailConcurrency, async (record) => {
+  const renderedEntities = await mapLimit(allRecords, resolvedDetailConcurrency, async (record) => {
     const detail = await client.fetchDetail(record.family, record.sourcePath);
     const body = renderApiMarkdown({
       family: record.family,
