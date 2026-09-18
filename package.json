@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build:native": "node scripts/build-native.mjs",
+    "pretest": "npm run build:native",
     "sync": "node src/cli.mjs sync",
     "sync:api": "node src/cli.mjs sync-api",
     "sync:all": "node src/cli.mjs sync-all",

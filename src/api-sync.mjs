@@ -379,10 +379,13 @@ export async function syncApi({
   client = createApiClient(),
   // 按机器资源给默认上限；调用方仍可按网络条件手动覆盖。
   detailConcurrency,
-  nativeFiles = hasNativeFiles(),
+  nativeFiles = true,
   clock = () => new Date().toISOString(),
   onProgress
 } = {}) {
+  if (nativeFiles && !hasNativeFiles()) {
+    throw new Error('未找到 Go 文件写入器，请先运行 npm run build:native。');
+  }
   const startedAt = Date.now();
   const resolvedDetailConcurrency = detailConcurrency ?? getDefaultApiDetailConcurrency();
   const manifestPath = toAbsolutePath(rootDir, API_MANIFEST_PATH);
@@ -520,7 +523,7 @@ export async function syncApi({
     });
   }
 
-  // 仅把文件 I/O 交给 Go，文档渲染、清理旧路径和 manifest 顺序仍由 JS 管理。
+  // Go 负责文件 I/O，JS 负责渲染、清理旧路径和 manifest 顺序。
   if (nativeFiles) {
     await mkdir(rootDir, { recursive: true });
     await writeNativeFiles({
@@ -547,7 +550,6 @@ export async function syncApi({
       }
       tickFinalize();
     }
-
   }
 
   for (const family of API_FAMILIES) {

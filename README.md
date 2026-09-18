@@ -50,7 +50,7 @@ oasis-skill-plus/
 
 - Node.js 18+
 - 本地文档检索需要 `ripgrep`（`rg`），并确保它在 `PATH` 中
-- 可选 Go 文件处理功能需要先安装 Go 1.22+ 进行构建
+- API 同步需要 Go 1.22+ 构建文件写入器
 
 说明：
 
@@ -67,6 +67,8 @@ cd oasis-skill-plus
 ```
 
 ### 2. 执行同步
+
+首次同步前先完成第 3 步，API 同步必须使用 Go 文件写入器。
 
 使用 npm script：
 
@@ -90,7 +92,7 @@ node src/cli.mjs sync-all
 - `双击运行同步API.cmd`
 - `双击运行同步Wiki+API.cmd`
 
-### 3. 启用 Go 文件处理（可选）
+### 3. 构建 Go 文件写入器（必需）
 
 安装 Go 1.22+ 后执行一次：
 
@@ -98,9 +100,9 @@ node src/cli.mjs sync-all
 npm run build:native
 ```
 
-构建结果位于 `bin/oasis-file-writer.exe`（Windows）或 `bin/oasis-file-writer`（其他平台）。之后 `sync-api` 与 `sync-all` 自动使用 Go 批量处理 API 文档文件。
+构建结果位于 `bin/oasis-file-writer.exe`（Windows）或 `bin/oasis-file-writer`（其他平台）。之后 `sync-api` 与 `sync-all` 使用 Go 批量处理 API 文档文件，JS 负责请求、渲染和索引。
 
-未构建时使用 JS 实现；已构建的程序运行失败时会报告错误。二进制不纳入 Git，换机器或修改 Go 源码后需重新构建。运行已构建的程序不需要安装 Go。
+未构建时 API 同步会直接报错，不再回退到 JS 文件写入。二进制不纳入 Git，换机器或修改 Go 源码后需重新构建；运行已构建的程序不需要安装 Go。
 
 ## 同步命令说明
 
