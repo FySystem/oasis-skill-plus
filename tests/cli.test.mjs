@@ -27,6 +27,7 @@ test('runCli routes sync-api to the API synchronizer', async () => {
     argv: ['node', 'cli', 'sync-api'],
     stdout: stdout.stream,
     stderr: stderr.stream,
+    ensureNativeFilesImpl: () => calls.push('build'),
     syncWikiImpl: async () => {
       calls.push('wiki');
       return {};
@@ -44,11 +45,32 @@ test('runCli routes sync-api to the API synchronizer', async () => {
   });
 
   assert.equal(exitCode, 0);
-  assert.deepEqual(calls, ['api']);
+  assert.deepEqual(calls, ['build', 'api']);
   assert.match(stdout.read(), /API 同步完成。/);
   assert.match(stdout.read(), /实体数：4/);
   assert.match(stdout.read(), /新增：4/);
   assert.equal(stderr.read(), '');
+});
+
+test('runCli builds the native writer before a combined sync', async () => {
+  const calls = [];
+  const exitCode = await runCli({
+    argv: ['node', 'cli', 'sync-all'],
+    stdout: createWritableCapture().stream,
+    stderr: createWritableCapture().stream,
+    ensureNativeFilesImpl: () => calls.push('build'),
+    syncWikiImpl: async () => {
+      calls.push('wiki');
+      return { totalArticles: 0, createdCount: 0, updatedCount: 0, deletedCount: 0, imagesDownloaded: 0, durationMs: 0 };
+    },
+    syncApiImpl: async () => {
+      calls.push('api');
+      return { totalEntities: 0, createdCount: 0, updatedCount: 0, deletedCount: 0, durationMs: 0 };
+    }
+  });
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(calls, ['build', 'wiki', 'api']);
 });
 
 test('runCli routes sync-all to both synchronizers', async () => {

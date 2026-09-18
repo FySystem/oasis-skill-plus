@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
@@ -6,9 +6,25 @@ import { fileURLToPath } from 'node:url';
 export const nativeFileBinary = fileURLToPath(new URL(
   `../bin/oasis-file-writer${process.platform === 'win32' ? '.exe' : ''}`, import.meta.url
 ));
+const nativeBuildScript = fileURLToPath(new URL('../scripts/build-native.mjs', import.meta.url));
 
 export function hasNativeFiles() {
   return existsSync(nativeFileBinary);
+}
+
+export function ensureNativeFiles() {
+  if (hasNativeFiles()) return;
+
+  const result = spawnSync(process.execPath, [nativeBuildScript], {
+    stdio: 'inherit',
+    windowsHide: true
+  });
+  if (result.error) {
+    throw new Error(`Go 文件写入器构建失败：${result.error.message}`);
+  }
+  if (result.status !== 0 || !hasNativeFiles()) {
+    throw new Error(`Go 文件写入器构建失败，退出码：${result.status ?? '未知'}`);
+  }
 }
 
 export function writeNativeFiles({ items, directory, concurrency = 8, onWritten }) {

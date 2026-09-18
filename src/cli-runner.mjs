@@ -8,6 +8,7 @@ import {
 } from './progress.mjs';
 import { syncApi } from './api-sync.mjs';
 import { syncWiki } from './sync.mjs';
+import { ensureNativeFiles } from './native-files.mjs';
 
 function writeLine(stream, line) {
   stream.write(`${line}\n`);
@@ -90,7 +91,8 @@ export async function runCli({
   stderr = process.stderr,
   syncWikiImpl = syncWiki,
   syncApiImpl = syncApi,
-  createProgressReporterImpl = createTerminalProgressReporter
+  createProgressReporterImpl = createTerminalProgressReporter,
+  ensureNativeFilesImpl = ensureNativeFiles
 } = {}) {
   const command = argv[2];
 
@@ -100,6 +102,10 @@ export async function runCli({
   }
 
   try {
+    if (command === 'sync-api' || command === 'sync-all') {
+      ensureNativeFilesImpl();
+    }
+
     if (command === 'sync') {
       const reporter = createProgressReporterImpl({
         stdout,
