@@ -1,4 +1,4 @@
 interface:
   display_name: "绿洲启元官方文档"
   short_description: "查询本地绿洲API与Wiki"
-  default_prompt: "使用 $oasis-official-docs 先核实绿洲启元 API 是否存在，或先搜索官方 Wiki，再回答问题或编写代码。"
+  default_prompt: "当问题涉及绿洲启元 API、Wiki、编辑器、玩法或故障排查时，自动使用 $oasis-official-docs：先查询本地官方文档，再回答或编写代码；核实 API 优先使用 Rust CLI exact 查询，Wiki 全文排查优先使用 rg。"

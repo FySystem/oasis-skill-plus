@@ -1,339 +1,99 @@
 # oasis-skill-plus
 
-`oasis-skill-plus` 是一个面向绿洲启元官方文档的本地化工具仓库，提供两类能力：
+这是一个纯 Rust 的绿洲官方 Wiki/API 文档同步与本地检索工具。
 
-1. 把 Oasis 官方 Wiki 与 API 文档同步到本地，生成可检索、可版本管理的 Markdown。
-2. 提供 `oasis-official-docs` 查询型 skill，供其他项目在回答问题、核对 API、编写代码前先查本地官方文档。
+它可以：
 
-这个仓库适合两类使用方式：
+- 并发同步官方 Wiki，生成 Markdown、文章索引和增量 manifest；
+- 并发同步四类 API（`class`、`cppenum`、`cppstruct`、`globalfunc`），生成交叉链接、family 索引和符号索引；
+- 下载 Wiki 图片并采用临时目录发布，失败时保留上一份完整文档树；
+- 使用本地 TSV 索引和 Markdown 进行结构化 JSON 或文本查询；
+- 使用 Tokio、Reqwest 和有界并发任务处理网络、解析和文件写入。
 
-- 直接把它当作文档同步仓库使用。
-- 把它作为其他项目中的固定目录或子模块使用，为 AI / skill 提供本地官方文档数据源。
+## 环境
 
-## 核心能力
+- Rust stable（MSVC toolchain）；
+- Windows 构建需要 Visual Studio Build Tools 的 C++ 工具链；
+- 运行时不需要 Node.js 或 Go。
 
-- 同步 Oasis Wiki 到 `docs/wiki`
-- 同步 Oasis API 到 `docs/api`
-- 自动生成索引页与本地图片资源
-- 使用 manifest 记录同步状态，支持增量更新、重命名、删除清理
-- 推荐直接使用 `rg` 检索 TSV 索引与 Markdown，保留 `query-oasis-docs.mjs` 作为结构化输出与自动化校验包装层
-- 提供 `oasis-official-docs` skill，约束 AI 先查证再回答，减少 API 幻觉
+## 构建与测试
 
-## 目录结构
+```bash
+cargo build --release
+cargo test
+cargo clippy --all-targets -- -D warnings
+```
+
+## 同步
+
+```bash
+# 同步 Wiki
+cargo run -- sync
+
+# 同步 API
+cargo run -- sync-api
+
+# 并发同步 Wiki 和 API
+cargo run -- sync-all
+```
+
+所有同步命令支持 `--root` 指定输出根目录。测试或镜像环境可以用 `--base-url`、`--wiki-base-url` 和 `--api-base-url` 指向本地 HTTP 服务；并发数可以用 `--article-concurrency`、`--image-concurrency` 和 `--detail-concurrency` 调整。
+
+Windows 下也可以直接双击根目录中的 `双击运行同步Wiki.bat`、`双击运行同步API.bat` 或 `双击运行同步Wiki+API.bat`。脚本会调用 Rust release 程序；首次运行找不到程序时，会自动执行 `cargo build --release`。
+
+批处理输出保留旧版的 `[信息]`、进度条、统计摘要和 `[完成]/[失败]` 文案；`sync-all` 在终端中并排显示 Wiki 与 API 进度，两个同步任务同时运行。
+
+## 查询
+
+```bash
+# 核对 API 是否存在
+cargo run -- query --project-root . --scope api --mode verify-api --query AActor
+
+# 查询 Wiki，输出文本
+cargo run -- query --project-root . --scope wiki --mode search --query 生命周期 --format text --limit 10
+
+# 按 API family 查询并要求索引精确匹配
+cargo run -- query --project-root . --scope api --family class --query AActor --exact
+```
+
+查询支持：
+
+- `--scope api|wiki|all`；
+- `--mode verify-api|search`；
+- `--format json|text`；
+- `--limit <正整数>`；
+- `--family class|cppenum|cppstruct|globalfunc`；
+- `--exact`。
+
+当索引缺失时，普通搜索会回退到 Markdown；精确搜索会报告 warning 并跳过回退。
+
+## 目录
 
 ```text
-oasis-skill-plus/
-├─ docs/
-│  ├─ api/                          # 同步后的 API Markdown
-│  ├─ wiki/                         # 同步后的 Wiki Markdown
-│  └─ skills/
-│     └─ oasis-official-docs.md     # skill 的安装与使用说明
-├─ skills/
-│  └─ oasis-official-docs/
-│     ├─ SKILL.md
-│     ├─ agents/
-│     └─ scripts/
-│        └─ query-oasis-docs.mjs    # 本地文档查询脚本
-├─ src/
-│  ├─ cli.mjs
-│  ├─ cli-runner.mjs
-│  ├─ sync.mjs                      # Wiki 同步
-│  └─ api-sync.mjs                  # API 同步
-├─ tests/
-├─ .oasis-sync/                     # 同步 manifest
-├─ 双击运行同步Wiki.cmd
-├─ 双击运行同步API.cmd
-└─ 双击运行同步Wiki+API.cmd
+src/
+├─ main.rs          # Rust CLI
+├─ api.rs           # Wiki/API HTTP 客户端与重试
+├─ sync.rs          # Wiki 同步、图片发布与 manifest
+├─ api_sync.rs      # API catalog/detail 同步与增量清理
+├─ markdown.rs      # Markdown、链接和图片处理
+├─ api_markdown.rs  # API Markdown 渲染
+├─ manifest.rs      # manifest、哈希和增量 diff
+├─ index.rs         # TSV 索引生成
+└─ search.rs        # 本地索引与 Markdown 查询
+tests/
+└─ integration.rs   # Wiki/API 端到端 fixture 测试
+docs/
+├─ wiki/            # 同步后的 Wiki 文档
+└─ api/             # 同步后的 API 文档
 ```
 
-## 环境要求
+## 为其他项目接入 skill
 
-- Node.js 18+
-- 本地文档检索需要 `ripgrep`（`rg`），并确保它在 `PATH` 中
-- API 同步需要 Go 1.22+ 构建文件写入器
-
-说明：
-
-- 仓库使用了原生 `fetch` 和 `node:test`，因此建议直接使用 Node.js 18 或更高版本。
-- `package.json` 中没有第三方依赖，通常不需要安装额外 npm 包即可运行。
-
-## 快速开始
-
-### 1. 克隆仓库
+其他项目仍可把本仓库放在 `oasis-skill-plus` 目录下。查询时调用编译后的 Rust 二进制：
 
 ```bash
-git clone <your-repo-url>
-cd oasis-skill-plus
+oasis-skill-plus query --project-root "<游戏项目根目录>" \
+  --scope api --mode verify-api --query AActor --format json
 ```
 
-### 2. 执行同步
-
-首次同步前先完成第 3 步，API 同步必须使用 Go 文件写入器。
-
-使用 npm script：
-
-```bash
-npm run sync
-npm run sync:api
-npm run sync:all
-```
-
-或直接执行：
-
-```bash
-node src/cli.mjs sync
-node src/cli.mjs sync-api
-node src/cli.mjs sync-all
-```
-
-在 Windows 下，也可以直接双击以下脚本：
-
-- `双击运行同步Wiki.cmd`
-- `双击运行同步API.cmd`
-- `双击运行同步Wiki+API.cmd`
-
-### 3. 构建 Go 文件写入器（必需）
-
-安装 Go 1.22+ 后执行一次：
-
-```bash
-npm run build:native
-```
-
-构建结果位于 `bin/oasis-file-writer.exe`（Windows）或 `bin/oasis-file-writer`（其他平台）。之后 `sync-api` 与 `sync-all` 使用 Go 批量处理 API 文档文件，JS 负责请求、渲染和索引。
-
-未构建时 API 同步会直接报错，不再回退到 JS 文件写入。二进制不纳入 Git，换机器或修改 Go 源码后需重新构建；运行已构建的程序不需要安装 Go。
-
-## 同步命令说明
-
-### `sync`
-
-同步 Oasis Wiki 文档。
-
-- 远端来源：`https://developer.gp.qq.com/wikieditor`
-- 输出目录：`docs/wiki`
-- 额外产物：
-  - `docs/wiki/000_索引.md`
-  - `docs/wiki/_assets/images/`
-  - `.oasis-sync/manifest.json`
-
-### `sync-api`
-
-同步 Oasis API 文档。
-
-- 远端来源：`https://developer.gp.qq.com/api`
-- 输出目录：`docs/api`
-- 当前覆盖的 API 家族：
-  - `class`
-  - `cppenum`
-  - `cppstruct`
-  - `globalfunc`
-- 额外产物：
-  - `docs/api/000_索引.md`
-  - `docs/api/<family>/000_索引.md`
-  - `.oasis-sync/api-manifest.json`
-
-### `sync-all`
-
-并发同步 Wiki 和 API，并输出各自耗时与总耗时。双击 `双击运行同步Wiki+API.cmd` 同样使用此模式；某一任务失败时，会等待另一任务结束后返回失败退出码。
-
-在同一终端窗口中，左侧显示 Wiki、右侧显示 API，实时显示进度并保留已完成的阶段。输出重定向到文件时，结束后记录完整分栏进度。
-
-同步时会并发获取文档和图片。实际耗时取决于网络、远端服务、本地磁盘和已有文件情况。
-
-图片先下载到临时目录，全部下载成功后再移入正式目录。图片下载失败时会清理临时文件，并保留旧文档与同步清单。
-
-## 输出结果说明
-
-同步完成后，这个仓库会成为一个本地官方文档镜像，适合直接阅读、全文检索、纳入版本管理，或被其他项目当作只读文档源使用。
-
-### Wiki 输出
-
-- 每篇词条会生成到 `docs/wiki/<分类路径>/<文章ID>_<标题>.md`
-- 词条中的官方 Wiki 链接会被改写为本地相对链接
-- 词条中的远程图片会下载到 `docs/wiki/_assets/images/`
-- 会自动生成 `docs/wiki/000_索引.md`
-- 会自动生成文章索引 `docs/wiki/article-index.tsv`
-
-### API 输出
-
-- API 详情页会生成到 `docs/api/<family>/.../*.md`
-- API 文档之间的类型链接会改写为本地相对链接
-- 会自动生成根索引和各 family 索引
-- 会自动生成符号索引 `docs/api/symbol-index.tsv`
-
-### Manifest
-
-`.oasis-sync` 下的 manifest 用于记录：
-
-- 上次同步时间
-- 远端版本信息
-- 已生成的文档路径
-- 已下载的图片映射
-
-这让仓库能够在后续同步时正确处理新增、更新、重命名和删除。
-
-同步摘要中的新增、更新、删除按 Wiki 词条或 API 实体统计，不包含索引文件。远端未变化但本地缺失的文档补回后计入新增；图片下载数量单独显示。
-
-## 在其他项目中接入 `oasis-official-docs`
-
-如果你希望在另一个项目里查询本地绿洲启元官方文档，推荐把本仓库放在目标项目根目录下，目录名保持为 `oasis-skill-plus`。
-
-推荐目录结构：
-
-```text
-ProjectA/
-├─ oasis-skill-plus/
-│  ├─ docs/api/
-│  ├─ docs/wiki/
-│  └─ skills/oasis-official-docs/
-└─ skills/
-   └─ oasis-official-docs/
-```
-
-关键约定：
-
-- 目标项目根目录默认视为 `ProjectA/`
-- 文档仓库默认查找 `ProjectA/oasis-skill-plus`
-- 官方文档默认读取 `ProjectA/oasis-skill-plus/docs/api` 与 `ProjectA/oasis-skill-plus/docs/wiki`
-
-接入步骤：
-
-1. 在目标项目根目录放置本仓库，目录名保持为 `oasis-skill-plus`
-2. 先执行过一次同步，或确保仓库内已有 `docs/api` 与 `docs/wiki`
-3. 将 `skills/oasis-official-docs` 安装或复制到目标项目可发现的 skill 目录
-4. 在目标项目中优先通过 `rg` 核对本地官方文档；需要结构化输出时再使用该 skill 或查询脚本，而不是直接凭记忆回答
-
-补充说明：
-
-- 如果当前环境支持直接发现仓库内 skill，也可以直接复用 `skills/oasis-official-docs`
-- 如果脚本返回 `OASIS_REPO_NOT_FOUND` 或 `DOCS_SCOPE_MISSING`，说明目录布局或文档范围不符合约定，应先修复目录问题
-
-## rg 优先查询
-
-普通人工查询优先直接使用 `rg`。从目标项目根目录执行：
-
-```bash
-rg --fixed-strings --line-number "AActor" oasis-skill-plus/docs/api/symbol-index.tsv
-rg --fixed-strings --line-number "生命周期" oasis-skill-plus/docs/wiki/article-index.tsv oasis-skill-plus/docs/wiki
-rg --fixed-strings --line-number "Actor" oasis-skill-plus/docs/api/class
-```
-
-建议顺序：
-
-- 确认 API 是否存在：先查 `docs/api/symbol-index.tsv`，再打开命中的 Markdown。
-- 搜索 Wiki 问题：先查 `docs/wiki/article-index.tsv`，再查 `docs/wiki` 正文。
-- 搜索 API 用法或上下文：按需查 `docs/api/<family>`，例如 `docs/api/class`。
-- 需要正则时去掉 `--fixed-strings`；需要忽略大小写时加 `--ignore-case`。
-
-## 查询脚本用法
-
-脚本不是普通查询的必经入口。它保留给需要稳定 JSON/text 输出、自动化调用、或明确区分 `verify-api` 与 `search` 语义的场景。
-
-查询脚本位于：
-
-```text
-oasis-skill-plus/skills/oasis-official-docs/scripts/query-oasis-docs.mjs
-```
-
-从目标项目根目录执行：
-
-```bash
-node oasis-skill-plus/skills/oasis-official-docs/scripts/query-oasis-docs.mjs \
-  --project-root . \
-  --scope api|wiki|all \
-  --mode verify-api|search \
-  --query "<关键词或 API 名称>" \
-  --format json|text \
-  --limit 20
-```
-
-常见示例：
-
-```bash
-node oasis-skill-plus/skills/oasis-official-docs/scripts/query-oasis-docs.mjs --project-root . --scope api --mode verify-api --query "AActor" --format json
-node oasis-skill-plus/skills/oasis-official-docs/scripts/query-oasis-docs.mjs --project-root . --scope wiki --mode search --query "生命周期" --format text --limit 10
-node oasis-skill-plus/skills/oasis-official-docs/scripts/query-oasis-docs.mjs --project-root . --scope api --mode search --query "Actor" --family class --limit 10
-```
-
-参数说明：
-
-- `--project-root`：目标项目根目录，脚本会在其下寻找 `oasis-skill-plus`
-- `--scope`：查询范围，支持 `api`、`wiki`、`all`
-- `--mode`：
-  - `verify-api`：脚本场景下用于确认某个 API 是否真实存在
-  - `search`：脚本场景下用于通用搜索
-- `--query`：查询词，必填
-- `--format`：输出格式，支持 `json`、`text`
-- `--limit`：限制返回命中数量
-- `--exact`：精确查询；索引缺失时不会回退搜索 Markdown
-- `--family`：API family 过滤，支持 `class`、`cppenum`、`cppstruct`、`globalfunc`
-
-返回结果为 JSON，常用字段包括：
-
-- `matches[].type`：命中来源，`api` 或 `wiki`
-- `matches[].matchType`：命中方式，当前可能为 `symbol-index`、`article-index`、`content`
-- `matches[].title`：文档标题或符号名
-- `matches[].relativePath`：相对 `oasis-skill-plus` 根目录的路径
-- `matches[].absolutePath`：本地绝对路径
-- `matches[].lineNumber`：`rg --json` 命中的行号；索引命中或无法定位时可能为空
-- `matches[].sourceJsonUrl`：API 索引命中的源 JSON URL；非 API 索引命中时为空
-- `matches[].sourceUrl`：Wiki 索引命中的源页面 URL；非 Wiki 索引命中时为空
-- `matches[].excerpt`：命中摘录
-- `warnings[]`：非致命告警，例如 `INDEX_MISSING`
-
-## 推荐使用方式
-
-### 作为同步仓库
-
-适合以下场景：
-
-- 需要把 Oasis 官方 Wiki 与 API 资料沉淀到本地
-- 希望对同步结果进行版本管理
-- 希望后续用任意全文检索工具搜索文档
-
-### 作为其他项目的文档子模块
-
-适合以下场景：
-
-- 让 AI 在写绿洲启元相关代码前先核实 API 是否存在
-- 让 AI 在回答编辑器、玩法、生命周期等问题前先查官方 Wiki
-- 在团队项目里提供统一、可复现的本地官方资料源
-
-## 测试
-
-运行全部测试：
-
-```bash
-npm test
-```
-
-修改 Go 文件处理程序后，重新构建并运行原生测试：
-
-```bash
-npm run build:native
-npm run test:native
-```
-
-测试覆盖的重点包括：
-
-- CLI 路由与中文提示
-- Wiki / API 同步逻辑
-- 索引生成与链接改写
-- manifest 稳定性
-- Windows 启动脚本行为
-- `query-oasis-docs.mjs` 的查询与错误返回
-
-## 注意事项
-
-- 默认使用本地已同步好的 Markdown，不会每次查询都自动刷新远端数据
-- 只有在用户明确要求“最新”“当前”“刷新后再看”时，才建议执行同步命令
-- 确认 API 是否真实存在时应优先查 `docs/api/symbol-index.tsv`，避免把猜测当成官方事实
-- Wiki 文档可以解释流程和问题排查，但不能替代 API 存在性校验
-- `RG_NOT_FOUND` 表示 `ripgrep` 不在 `PATH`，应先安装 `ripgrep` 或修复 `PATH` 后再查询
-- `INDEX_MISSING` 是索引缺失 warning；非 exact 搜索会继续查 Markdown，exact 搜索不会回退 Markdown
-
-## 相关文档
-
-- `docs/skills/oasis-official-docs.md`
-- `skills/oasis-official-docs/SKILL.md`
+skill 默认读取 `docs/api`、`docs/wiki` 及其 TSV 索引，不会自动刷新远端数据。只有明确需要最新资料时才运行同步命令。
