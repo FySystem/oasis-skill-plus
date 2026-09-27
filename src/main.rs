@@ -23,8 +23,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    #[command(name = "sync")]
-    Sync(SyncCommand),
+    #[command(name = "sync-wiki")]
+    SyncWiki(SyncWikiCommand),
     #[command(name = "sync-api")]
     SyncApi(SyncApiCommand),
     #[command(name = "sync-all")]
@@ -34,7 +34,7 @@ enum Command {
 }
 
 #[derive(Debug, Args, Clone)]
-struct SyncCommand {
+struct SyncWikiCommand {
     #[arg(long, default_value = ".")]
     root: PathBuf,
     #[arg(long, default_value = DEFAULT_WIKI_BASE_URL)]
@@ -175,7 +175,7 @@ fn validate_query_directories(
 
 async fn run_command(command: Command) -> Result<()> {
     match command {
-        Command::Sync(args) => {
+        Command::SyncWiki(args) => {
             let reporter = Reporter::new(false);
             let result = sync_wiki(
                 Arc::new(WikiHttpClient::new(args.base_url)),

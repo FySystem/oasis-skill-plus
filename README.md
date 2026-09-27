@@ -28,7 +28,7 @@ cargo clippy --all-targets -- -D warnings
 
 ```bash
 # 同步 Wiki
-cargo run -- sync
+cargo run -- sync-wiki
 
 # 同步 API
 cargo run -- sync-api

@@ -3,7 +3,7 @@ setlocal EnableExtensions DisableDelayedExpansion
 
 set "COMMAND=%~1"
 set "PAUSE_MODE=%~2"
-if /i not "%COMMAND%"=="sync" if /i not "%COMMAND%"=="sync-api" if /i not "%COMMAND%"=="sync-all" goto invalid_command
+if /i not "%COMMAND%"=="sync-wiki" if /i not "%COMMAND%"=="sync-api" if /i not "%COMMAND%"=="sync-all" goto invalid_command
 
 cd /d "%~dp0.."
 for /f "tokens=2 delims=:" %%I in ('chcp') do set "ORIGINAL_CODE_PAGE=%%I"
@@ -30,7 +30,7 @@ echo [信息] 未找到 Rust release 程序，正在构建...
 if errorlevel 1 goto build_failed
 
 :run_sync
-if /i "%COMMAND%"=="sync" echo [信息] 开始同步 Oasis Wiki...
+if /i "%COMMAND%"=="sync-wiki" echo [信息] 开始同步 Oasis Wiki...
 if /i "%COMMAND%"=="sync-api" echo [信息] 开始同步 Oasis API...
 if /i "%COMMAND%"=="sync-all" echo [信息] 开始同步 Oasis Wiki 和 API...
 "%BINARY%" %COMMAND%
@@ -45,7 +45,7 @@ echo [完成] 同步已完成。
 goto finish
 
 :invalid_command
-echo [错误] 用法：scripts\sync-rust.bat sync^|sync-api^|sync-all [--no-pause]
+echo [错误] 用法：scripts\sync-rust.bat sync-wiki^|sync-api^|sync-all [--no-pause]
 set "EXIT_CODE=2"
 goto finish
 

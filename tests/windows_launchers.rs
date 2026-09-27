@@ -67,7 +67,7 @@ fn actual_batch_launchers_handle_success_failure_pause_and_build() {
     let binary = root.join("target/release/oasis-skill-plus.exe");
     fs::copy(&stub, &binary).unwrap();
 
-    for (wrapper, mode) in wrappers.iter().zip(["sync", "sync-api", "sync-all"]) {
+    for (wrapper, mode) in wrappers.iter().zip(["sync-wiki", "sync-api", "sync-all"]) {
         for code in [0, 7] {
             for pause in [false, true] {
                 // 从其他目录调用；外部批处理同时校验返回码与原始代码页恢复。

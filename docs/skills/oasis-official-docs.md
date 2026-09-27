@@ -107,7 +107,7 @@ cargo run --manifest-path oasis-skill-plus/Cargo.toml -- query --project-root . 
 当用户明确要求最新资料时，在 `oasis-skill-plus` 仓库根目录执行：
 
 ```bash
-cargo run -- sync
+cargo run -- sync-wiki
 cargo run -- sync-api
 cargo run -- sync-all
 ```

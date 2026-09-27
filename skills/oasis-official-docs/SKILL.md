@@ -68,7 +68,7 @@ Rust CLI 会按 API 索引、API 正文、Wiki 索引、Wiki 正文合并结果�
 - 在文档仓库根目录执行：
 
 ```bash
-cargo run -- sync
+cargo run -- sync-wiki
 cargo run -- sync-api
 cargo run -- sync-all
 ```
