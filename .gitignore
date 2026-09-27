@@ -1,29 +1,17 @@
-# Rust 构建产物
+# 构建产物、本地缓存与日志
 target/
-*.pdb
 bin/
 node_modules/
-
-# 本机性能测试报告不作为通用项目文档提交
-docs/sync-performance.md
-docs/sync-cold-performance.md
-docs/native-performance.md
-docs/query-performance.md
-docs/performance-comparison.md
-
-# 一次性性能对比脚本、fixture 与结果
-/benchmarks/
-
-# Python/测试缓存
+*.pdb
+*.log
 __pycache__/
 *.py[cod]
 .pytest_cache/
 
-# 同步生成内容
+# 生成文档、性能报告与本地文件
+/benchmarks/
+docs/*performance*.md
 .oasis-sync/
 docs/api/
 docs/wiki/
-
-# 本地日志与编辑器配置
-*.log
 .trae/
