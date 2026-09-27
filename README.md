@@ -3,7 +3,7 @@
 > 面向《和平精英》绿洲启元编辑器与 UGC 开发的官方 Wiki/API 文档同步工具：把远端资料同步为本地 Markdown、索引和可检索文档。
 
 ![Language](https://img.shields.io/badge/Language-Rust-000000?style=flat-square&logo=rust&logoColor=white)
-![Platform](https://img.shields.io/badge/Platform-%E5%92%8C%E5%B9%B3%E7%B2%BE%E8%8B%B1%C2%B7%E7%BB%BF%E6%B4%B2%E5%90%AF%E5%85%83-00A86B?style=flat-square)
+![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?style=flat-square&logo=windows&logoColor=white)
 ![Content](https://img.shields.io/badge/Content-Wiki%20%2B%20API-2F80ED?style=flat-square)
 ![Repository](https://img.shields.io/badge/Repository-Documentation%20Sync-orange?style=flat-square)
 
